@@ -59,8 +59,8 @@ def rewire_tc_two(G, N, Na, c, bias, remove_neighbor, edgelist, N_edge):
                 remove_random_neighbor(G, startNode)
             else:
                 remove_random_edge(G, edgelist, N_edge)
-                edgelist.append([startNode, endNode])
-            G.add_edge(startNode, endNode)
+                edgelist.append([newNodeA, newNodeB])
+            G.add_edge(newNodeA, newNodeB)
 
 
 def rewire_pa_one(G, N, Na, c, bias, remove_neighbor, edgelist, N_edge): #formerly rewire_links
