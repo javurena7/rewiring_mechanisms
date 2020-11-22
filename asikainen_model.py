@@ -321,9 +321,9 @@ def get_p(G, Na):
             else:
                 p_aa += 1
     n_edges = float(G.number_of_edges())
-    p_aa /= n_edges
-    p_ab /= n_edges
-    p_bb /= n_edges
+    p_aa /= n_edges if n_edges > 0 else 1
+    p_ab /= n_edges if n_edges > 0 else 1
+    p_bb /= n_edges if n_edges > 0 else 1
     return p_aa, p_ab, p_bb
 
 def get_t(p):
@@ -398,7 +398,7 @@ def run_growing(N, fm, c, bias, p0, n_iter, track_steps=500, rewire_type="ba_two
     sources = list(range(N))
     target_list = list(np.random.choice(sources, m))
     for tgt in target_list:
-        _ = sources.pop(tgt)
+        _ = sources.remove(tgt)
     P = defaultdict(list)
     for i in range(N-m):
         grow_ba_two(G, sources, target_list, dist, m)

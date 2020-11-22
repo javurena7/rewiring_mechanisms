@@ -79,7 +79,8 @@ def run_diff_homophs(grow_type='tc_two', n_avg=10, fm=.1, remove_neighbor=False,
 
     #fig, ax = plt.subplots(2, 2)
     #fig_a, ax_a = plt.subplots(2, 2)
-    bias = np.arange(.5, 1.05, .05)
+    bias = np.arange(.5, 1.05, .05) #np.arange(.5, 1.1, .1)
+    bias = np.round(bias, 2)
     names = ['taa', 'tbb', 'rho_a', 'rho_b', 'taa0', 'tbb0', 'rho_a0', 'rho_b0', 'conv_d']
     cval = .95
     N = 1000
@@ -116,7 +117,7 @@ def run_diff_homophs(grow_type='tc_two', n_avg=10, fm=.1, remove_neighbor=False,
             taa0 /= n_avg; tbb0 /= n_avg; rho_a0 /= n_avg; rho_b0 /= n_avg
             conv_d /= n_avg
             _save_results(taa, tbb, rho_a, rho_b, taa0, tbb0, rho_a0, rho_b0, results, i, j, savename, grow_type, conv_d)
-    plot_rewiring_heatmap(fig, ax, results, bias)
+    #plot_rewiring_heatmap(fig, ax, results, bias)
 
 
 def plot_rewiring_heatmap(results, rewire_type, savename):
@@ -431,8 +432,8 @@ if __name__=='__main__':
 
     parser.add_argument('--grow_type', type=str, default='ba_two')
     parser.add_argument('--analysis', type=str, default='diffhomo')
-    parser.add_argument('--n_avg', type=int, default=5)
-    parser.add_argument('--N', type=int, default=1000)
+    parser.add_argument('--n_avg', type=int, default=1)
+    parser.add_argument('--N', type=int, default=500)
     parser.add_argument('--remove_neighbor', type=bool, default=False)
     parser.add_argument('--fm', type=float, default=0.5)
 
