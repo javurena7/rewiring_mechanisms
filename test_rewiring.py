@@ -22,10 +22,10 @@ def run_equalsize(rewire_type='tc_two', n_avg=10, remove_neighbor=False, n_iter=
     savename = sname + 'equalsize_{}.pdf'.format(rewire_type)
     bias = np.arange(.5, 1.05, .05)
     cvals = [0, .3, .5, .7, 1]
-    n_iter = 500000 #0
+    #n_iter = 500000 #0
     N = 1000
     fm = .5
-    p0 = [[.0035, .0035], [.0035, .0035]]
+    p0 = [[.005, .005], [.005, .005]]
     for cval in cvals:
         taas, rho_as, rho_bs = [], [], []
         print("c={}".format(cval))
@@ -84,15 +84,16 @@ def run_diff_homophs(rewire_type='tc_two', n_avg=10, fm=.1, remove_neighbor=Fals
     bias = np.arange(.5, 1.05, .05)
     names = ['taa', 'tbb', 'rho_a', 'rho_b', 'taa0', 'tbb0', 'rho_a0', 'rho_b0', 'conv_d']
     cval = .95
-    n_iter = 600000
+    #n_iter = 600000
     N = 1000
-    p0 = [[.0035, .0035], [.0035, .0035]]
+    p0 = [[.005, .005], [.005, .005]]
     results = {n: np.zeros((len(bias), len(bias))) for n in names}
     results['cval'] = cval
     results['bias'] = bias
     results['n_iter'] = n_iter
     results['p0'] = p0
     results['N'] = N
+    results['remove_neighbor'] = remove_neighbor
 
     for i, sa in enumerate(bias):
         taas, tbbs, rho_as, rho_bs = [], [], [], []
@@ -431,7 +432,7 @@ if __name__=='__main__':
     parser.add_argument('--analysis', type=str, default='eqhomo')
     parser.add_argument('--n_avg', type=int, default=5)
     parser.add_argument('--n_iter', type=int, default=600000)
-    parser.add_argument('--remove_neighbor', type=bool, default=False)
+    parser.add_argument('--remove_neighbor', type=bool, default=True)
     parser.add_argument('--fm', type=float, default=0.5)
 
     pargs = parser.parse_args()
