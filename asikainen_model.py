@@ -396,7 +396,7 @@ def run_growing(N, fm, c, bias, p0, n_iter, track_steps=500, rewire_type="ba_two
     h_aa, h_bb = bias
     G, Na, dist = ba_starter(N, fm, h_aa, h_bb)
     sources = list(range(N))
-    target_list = list(np.random.choice(sources, m))
+    target_list = list(np.random.choice(sources, m, replace=False))
     for tgt in target_list:
         _ = sources.remove(tgt)
     P = defaultdict(list)
