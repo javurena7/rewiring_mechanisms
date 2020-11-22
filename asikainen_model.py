@@ -380,14 +380,14 @@ def run_rewiring(N, fm, c, bias, p0, n_iter, track_steps=500, rewire_type="tc_tw
     return p, t, P, rho, converg_d
 
 
-def run_growing(N, fm, c, bias, p0, n_iter, track_steps=500, rewire_type="ba_two", remove_neighbor=True):
+def run_growing(N, fm, c, bias, p0, n_iter, track_steps=500, rewire_type="ba_two", remove_neighbor=True, m=2):
     """
     Run a Barabasi-Albert model for growing a network
     rewire_type: (str) ba_one, ba_two
     WE DONT USE c, p0, n_iter, remove_neighbor
     WE USE m=2
     """
-    m = 2
+    #m = 2
     v_types = ["ba_one", "ba_two"]
     assert rewire_type in v_types, "Add valid rewire type"
     rewire_type = 'grow_' + rewire_type

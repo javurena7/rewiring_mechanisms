@@ -83,14 +83,15 @@ def run_diff_homophs(grow_type='tc_two', n_avg=10, fm=.1, remove_neighbor=False,
     bias = np.round(bias, 2)
     names = ['taa', 'tbb', 'rho_a', 'rho_b', 'taa0', 'tbb0', 'rho_a0', 'rho_b0', 'conv_d']
     cval = .95
-    N = 1000
+    m = 2
     n_iter = N
     p0 = [[.0035, .0035], [.0035, .0035]]
     results = {n: np.zeros((len(bias), len(bias))) for n in names}
-    results['cval'] = cval
+    #results['cval'] = cval
     results['bias'] = bias
-    results['n_iter'] = n_iter
-    results['p0'] = p0
+    results['m'] = m
+    #results['n_iter'] = n_iter
+    #results['p0'] = p0
     results['N'] = N
     if grow_type == 'ba_one':
         other_grow = 'ba_two'
@@ -108,8 +109,8 @@ def run_diff_homophs(grow_type='tc_two', n_avg=10, fm=.1, remove_neighbor=False,
             conv_d = 0
 
             for _ in range(n_avg):
-                _, t, _, corr, conv = apm.run_growing(N, fm, cval, hms, p0, n_iter=n_iter, track_steps=n_iter, rewire_type=grow_type, remove_neighbor=remove_neighbor)
-                _, t0, _, corr0, _ = apm.run_growing(N, fm, 0, hms, p0, n_iter=n_iter, track_steps=n_iter, rewire_type=other_grow, remove_neighbor=remove_neighbor)
+                _, t, _, corr, conv = apm.run_growing(N, fm, cval, hms, p0, n_iter=n_iter, track_steps=n_iter, rewire_type=grow_type, remove_neighbor=remove_neighbor, m=m)
+                _, t0, _, corr0, _ = apm.run_growing(N, fm, 0, hms, p0, n_iter=n_iter, track_steps=n_iter, rewire_type=other_grow, remove_neighbor=remove_neighbor, m=m)
                 taa += t[0]; tbb += t[1]; rho_a += corr[0]; rho_b += corr[1]
                 taa0 += t0[0]; tbb0 += t0[1]; rho_a0 += corr0[0]; rho_b0 += corr0[1]
                 conv_d += conv
@@ -432,8 +433,8 @@ if __name__=='__main__':
 
     parser.add_argument('--grow_type', type=str, default='ba_two')
     parser.add_argument('--analysis', type=str, default='diffhomo')
-    parser.add_argument('--n_avg', type=int, default=1)
-    parser.add_argument('--N', type=int, default=500)
+    parser.add_argument('--n_avg', type=int, default=2)
+    parser.add_argument('--N', type=int, default=1000)
     parser.add_argument('--remove_neighbor', type=bool, default=False)
     parser.add_argument('--fm', type=float, default=0.5)
 
