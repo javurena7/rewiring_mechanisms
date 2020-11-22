@@ -1,6 +1,8 @@
 import networkx as nx
 import numpy as np
 from collections import defaultdict
+import copy
+import random
 
 def random_network(N, fm, p):
     min_nodes = list(range(int(N * fm)))
@@ -123,7 +125,7 @@ def rewire_tc_three(G, N, Na, c, bias, remove_neighbor, edgelist, N_edge):
 
 def rewire_tc_four(G, N, Na, c, bias, remove_neighbor, edgelist, N_edge):
     """
-    TC 4 - close a triangle by choosing a friend a friend of a friend (correcting by the degree of the friends)
+    TC 4 - close a triangle by choosing a friend of a friend (correcting by the degree of the friends)
     """
     startNode = np.random.randint(N)
     if G.degree(startNode) > 0:
@@ -140,6 +142,126 @@ def rewire_tc_four(G, N, Na, c, bias, remove_neighbor, edgelist, N_edge):
         else:
             endNode = np.random.randint(N)
         _accept_edge(startNode, endNode, G, edgelist, Na, bias, remove_neighbor, N_edge)
+
+
+def ba_starter(N, fm, h_aa, h_bb):
+    Na = int(N * fm)
+    minority_nodes = range(Na)
+    G = nx.Graph()
+    node_attribute = {}
+
+    for n in range(N):
+        if n < Na:
+            G.add_node(n , color = 'red')
+            node_attribute[n] = 'minority'
+        else:
+            G.add_node(n , color = 'blue')
+            node_attribute[n] = 'majority'
+
+    dist = defaultdict(int)
+    h_ab = 1 - h_aa
+    h_ba = 1 - h_bb
+    #create homophilic distance ### faster to do it outside loop ###
+    for n1 in range(N):
+        n1_attr = node_attribute[n1]
+        for n2 in range(N):
+            n2_attr = node_attribute[n2]
+            if n1_attr == n2_attr:
+                if n1_attr == 'minority':
+                    dist[(n1,n2)] = h_aa
+                else:
+                    dist[(n1,n2)] = h_bb
+            else:
+                if n1_attr == 'minority':
+                    dist[(n1,n2)] = h_ab
+                else:
+                    dist[(n1,n2)] = h_ba
+
+
+    return G, Na, dist
+
+def grow_ba_one(G, sources, target_list, dist, m):
+    """
+    BA 1 - Barabasi-Albert model where we pick nodes propto degree * homophily
+    """
+    source = np.random.choice(sources)
+    _ = sources.pop(source)
+    targets = _pick_ba_one_targets(G, source, target_list, dist, m)
+    if targets != set():
+        G.add_edges_from(zip([source] * m, targets))
+    target_list.append(source)
+
+
+def grow_ba_two(G, sources, target_list, dist, m):
+    """
+    BA 2 - Barabasi-Albert model where we pick nodes propto degree, and accept it with prob homophily
+    """
+
+    source = np.random.choice(sources)
+    _ = sources.remove(source)
+    targets = _pick_ba_two_targets(G, source, target_list, dist, m)
+    if targets != set():
+        G.add_edges_from(zip([source] * m, targets))
+    target_list.append(source)
+
+
+def _pick_ba_one_targets(G,source,target_list,dist,m):
+
+    target_prob_dict = {}
+    for target in target_list:
+        target_prob = (dist[(source,target)])* (G.degree(target)+0.00001)
+        target_prob_dict[target] = target_prob
+
+    prob_sum = sum(target_prob_dict.values())
+
+    targets = set()
+    target_list_copy = copy.copy(target_list)
+    count_looking = 0
+    if prob_sum == 0:
+        return targets
+    while len(targets) < m:
+        count_looking += 1
+        if count_looking > len(G): # if node fails to find target
+            break
+        rand_num = random.random()
+        cumsum = 0.0
+        for k in target_list_copy:
+            cumsum += float(target_prob_dict[k]) / prob_sum
+            if rand_num < cumsum:
+                targets.add(k)
+                target_list_copy.remove(k)
+                break
+    return targets
+
+
+def _pick_ba_two_targets(G, source, target_list, dist, m):
+
+    target_prob_dict = {}
+    for target in target_list:
+        target_prob =  G.degree(target) + 0.00001
+        target_prob_dict[target] = target_prob
+
+    prob_sum = sum(target_prob_dict.values())
+
+    targets = set()
+    target_list_copy = copy.copy(target_list)
+    count_looking = 0
+    if prob_sum == 0:
+        return targets
+    while len(targets) < m:
+        count_looking += 1
+        if count_looking > len(G): # if node fails to find target
+            break
+        rand_num = random.random()
+        cumsum = 0.0
+        for k in target_list_copy:
+            cumsum += float(target_prob_dict[k]) / prob_sum
+            if rand_num < cumsum:
+                if random.random() < dist[(source, k)]:
+                    targets.add(k)
+                    target_list_copy.remove(k)
+                    break
+    return targets
 
 
 def _accept_edge(startNode, endNode, G, edgelist, Na, bias, remove_neighbor, N_edge):
@@ -242,6 +364,44 @@ def run_rewiring(N, fm, c, bias, p0, n_iter, track_steps=500, rewire_type="tc_tw
     P = defaultdict(list)
     for i in range(n_iter):
         rewire_links(G, N, Na, c, bias, remove_neighbor, edgelist, N_edge)
+        if i % track_steps == 0:
+            p = get_p(G, Na)
+            P['p_aa'].append(p[0])
+            P['p_ab'].append(p[1])
+            P['p_bb'].append(p[2])
+        if i == int(.95 * n_iter):
+            p_95 = get_p(G, Na)
+            t_95 = get_t(p_95)
+
+    p = get_p(G, Na)
+    t = get_t(p)
+    converg_d = .5 * (np.abs(t[0] - t_95[0]) + np.abs(t[1] - t_95[1]))
+    rho = measure_core_periph(*t)
+    return p, t, P, rho, converg_d
+
+
+def run_growing(N, fm, c, bias, p0, n_iter, track_steps=500, rewire_type="ba_two", remove_neighbor=True):
+    """
+    Run a Barabasi-Albert model for growing a network
+    rewire_type: (str) ba_one, ba_two
+    WE DONT USE c, p0, n_iter, remove_neighbor
+    WE USE m=2
+    """
+    m = 2
+    v_types = ["ba_one", "ba_two"]
+    assert rewire_type in v_types, "Add valid rewire type"
+    rewire_type = 'grow_' + rewire_type
+    rewire_links = eval(rewire_type)
+    #G, Na = random_network(N, fm, p0)
+    h_aa, h_bb = bias
+    G, Na, dist = ba_starter(N, fm, h_aa, h_bb)
+    sources = list(range(N))
+    target_list = list(np.random.choice(sources, m))
+    for tgt in target_list:
+        _ = sources.pop(tgt)
+    P = defaultdict(list)
+    for i in range(N-m):
+        grow_ba_two(G, sources, target_list, dist, m)
         if i % track_steps == 0:
             p = get_p(G, Na)
             P['p_aa'].append(p[0])
