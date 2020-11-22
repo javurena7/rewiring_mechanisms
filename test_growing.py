@@ -70,9 +70,9 @@ def run_diff_homophs(grow_type='tc_two', n_avg=10, fm=.1, remove_neighbor=False,
     """
     sname = 'growing/'
 
-    if fm <= .11:
-        savename = sname + 'diff_homophs_{}.p'.format(grow_type)
-    elif fm >= .49:
+    #if fm <= .11:
+    #    savename = sname + 'diff_homophs_{}.p'.format(grow_type)
+    if fm >= .49:
         savename = sname + 'diff_homophs_eqsize_{}.p'.format(grow_type)
     else:
         savename = sname + 'diff_homophs_fm{}_{}.p'.format(int(100*fm), grow_type)
