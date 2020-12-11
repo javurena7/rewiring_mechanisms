@@ -201,15 +201,15 @@ def grow_ba_two(G, sources, target_list, dist, m):
     _ = sources.remove(source)
     targets = _pick_ba_two_targets(G, source, target_list, dist, m)
     if targets != set():
-        G.add_edges_from(zip([source] * m, targets))
+        G.add_edges_from(zip([source] * len(targets), targets))
     target_list.append(source)
 
 
-def _pick_ba_one_targets(G,source,target_list,dist,m):
+def _pick_ba_one_targets(G, source, target_list, dist, m):
 
     target_prob_dict = {}
     for target in target_list:
-        target_prob = (dist[(source,target)])* (G.degree(target)+0.00001)
+        target_prob = (dist[(source,target)]) * (G.degree(target) + 0.00001)
         target_prob_dict[target] = target_prob
 
     prob_sum = sum(target_prob_dict.values())
@@ -235,7 +235,17 @@ def _pick_ba_one_targets(G,source,target_list,dist,m):
 
 
 def _pick_ba_two_targets(G, source, target_list, dist, m):
-
+    """
+    Pick set of new neighbors for node source via second BA model.
+    Here, a candidate is selected with probability proportional to degree, and
+    accepted with probability homophily (or not joined). The process is run m times.
+    -----
+    G: networkx graph
+    source: incoming node for which neighbors are selected
+    target_list: list of possible neighbors
+    dist: dict of homophilies
+    m: number of timess the experiment is run.
+    """
     target_prob_dict = {}
     for target in target_list:
         target_prob =  G.degree(target) + 0.00001
@@ -248,7 +258,8 @@ def _pick_ba_two_targets(G, source, target_list, dist, m):
     count_looking = 0
     if prob_sum == 0:
         return targets
-    while len(targets) < m:
+    candidates = set()
+    while len(candidates) < m:
         count_looking += 1
         if count_looking > len(G): # if node fails to find target
             break
@@ -257,10 +268,11 @@ def _pick_ba_two_targets(G, source, target_list, dist, m):
         for k in target_list_copy:
             cumsum += float(target_prob_dict[k]) / prob_sum
             if rand_num < cumsum:
+                candidates.add(k)
                 if random.random() < dist[(source, k)]:
                     targets.add(k)
                     target_list_copy.remove(k)
-                    break
+                break
     return targets
 
 
@@ -308,18 +320,7 @@ def remove_random_edge(G, edgelist, N_edge):
 
 
 def get_p(G, Na):
-    p_aa, p_ab, p_bb = 0, 0, 0
-    for edge in G.edges():
-        if edge[0] >= Na:
-            if edge[1] >= Na:
-                p_bb += 1
-            else:
-                p_ab += 1
-        else:
-            if edge[1] >= Na:
-                p_ab += 1
-            else:
-                p_aa += 1
+    p_aa, p_ab, p_bb = get_l(G, Na)
     n_edges = float(G.number_of_edges())
     p_aa /= n_edges if n_edges > 0 else 1
     p_ab /= n_edges if n_edges > 0 else 1
@@ -337,6 +338,23 @@ def get_t(p):
         tbb = 0
     return taa, tbb
 
+def get_l(G, Na):
+    """
+    Return total number of links between groups
+    """
+    l_aa, l_ab, l_bb = 0, 0, 0
+    for edge in G.edges():
+        if edge[0] >= Na:
+            if edge[1] >= Na:
+                l_bb += 1
+            else:
+                l_ab += 1
+        else:
+            if edge[1] >= Na:
+                l_ab += 1
+            else:
+                l_aa += 1
+    return l_aa, l_ab, l_bb
 
 def measure_core_periph(taa, tbb, a=.01):
     """
@@ -391,7 +409,7 @@ def run_growing(N, fm, c, bias, p0, n_iter, track_steps=500, rewire_type="ba_two
     v_types = ["ba_one", "ba_two"]
     assert rewire_type in v_types, "Add valid rewire type"
     rewire_type = 'grow_' + rewire_type
-    rewire_links = eval(rewire_type)
+    grow_links = eval(rewire_type)
     #G, Na = random_network(N, fm, p0)
     h_aa, h_bb = bias
     G, Na, dist = ba_starter(N, fm, h_aa, h_bb)
@@ -400,13 +418,19 @@ def run_growing(N, fm, c, bias, p0, n_iter, track_steps=500, rewire_type="ba_two
     for tgt in target_list:
         _ = sources.remove(tgt)
     P = defaultdict(list)
+    K = defaultdict(list)
     for i in range(N-m):
-        grow_ba_two(G, sources, target_list, dist, m)
+        grow_links(G, sources, target_list, dist, m)
         if i % track_steps == 0:
-            p = get_p(G, Na)
-            P['p_aa'].append(p[0])
-            P['p_ab'].append(p[1])
-            P['p_bb'].append(p[2])
+            p = get_l(G, Na) # At some point this has also been get_p
+            P['l_aa'].append(p[0])
+            P['l_ab'].append(p[1])
+            P['l_bb'].append(p[2])
+            Ka, Kb = total_degree(G, Na)
+
+            K['Ka'].append(Ka)
+            K['Kb'].append(Kb)
+
         if i == int(.95 * n_iter):
             p_95 = get_p(G, Na)
             t_95 = get_t(p_95)
@@ -415,7 +439,16 @@ def run_growing(N, fm, c, bias, p0, n_iter, track_steps=500, rewire_type="ba_two
     t = get_t(p)
     converg_d = .5 * (np.abs(t[0] - t_95[0]) + np.abs(t[1] - t_95[1]))
     rho = measure_core_periph(*t)
-    return p, t, P, rho, converg_d
+    return p, t, (P, K), rho, converg_d
+
+def total_degree(G, Na):
+    Ka, Kb = 0, 0
+    for i in range(G.number_of_nodes()):
+        if i < Na:
+            Ka += G.degree(i)
+        else:
+            Kb += G.degree(i)
+    return Ka, Kb
 
 
 def theo_random_rewiring(na, s):
