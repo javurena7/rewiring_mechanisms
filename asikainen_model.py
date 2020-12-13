@@ -185,7 +185,7 @@ def grow_ba_one(G, sources, target_list, dist, m):
     BA 1 - Barabasi-Albert model where we pick nodes propto degree * homophily
     """
     source = np.random.choice(sources)
-    _ = sources.pop(source)
+    _ = sources.remove(source)
     targets = _pick_ba_one_targets(G, source, target_list, dist, m)
     if targets != set():
         G.add_edges_from(zip([source] * m, targets))
