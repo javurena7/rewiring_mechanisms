@@ -10,6 +10,22 @@ def random_network(N, fm, p):
     G = nx.stochastic_block_model([Na, N-Na], p)
     return G, Na
 
+def homophilous_sbm(N, Na, sa, sb, m=2):
+    Nb = N - Na
+    paa = 2 * m * sa / (Na - 1)
+    pbb = 2 * m * sb / (Nb - 1)
+    pab = m * (Na * (1-sa) + Nb * (1-sb)) / (Na * Nb)
+    p = [[paa, pab], [pab, pbb]]
+    G, Na = random_network(N, Na / N, p)
+    return G, Na
+
+def run_hsbm(N, Na, sa, sb, m=2):
+    G, Na = homophilous_sbm(N, Na, sa, sb, m)
+    p = get_p(G, Na)
+    t = get_t(p)
+    corr = measure_core_periph(*t, a=.01)
+    return t, corr
+
 
 def rewire_tc_one(G, N, Na, c, bias, remove_neighbor, edgelist, N_edge):
     """
@@ -192,6 +208,18 @@ def grow_ba_one(G, sources, target_list, dist, m):
     target_list.append(source)
 
 
+def grow_ba_zero(G, sources, target_list, dist, m):
+    """
+    BA 0 - Barabasi-Albert model where we pick nodes propto degree and there are groups but no homophily
+    """
+    source = np.random.choice(sources)
+    _ = sources.remove(source)
+    targets = _pick_ba_zero_targets(G, source, target_list, dist, m)
+    if targets != set():
+        G.add_edges_from(zip([source] * m, targets))
+    target_list.append(source)
+
+
 def grow_ba_two(G, sources, target_list, dist, m):
     """
     BA 2 - Barabasi-Albert model where we pick nodes propto degree, and accept it with prob homophily
@@ -210,6 +238,35 @@ def _pick_ba_one_targets(G, source, target_list, dist, m):
     target_prob_dict = {}
     for target in target_list:
         target_prob = (dist[(source,target)]) * (G.degree(target) + 0.00001)
+        target_prob_dict[target] = target_prob
+
+    prob_sum = sum(target_prob_dict.values())
+
+    targets = set()
+    target_list_copy = copy.copy(target_list)
+    count_looking = 0
+    if prob_sum == 0:
+        return targets
+    while len(targets) < m:
+        count_looking += 1
+        if count_looking > len(G): # if node fails to find target
+            break
+        rand_num = random.random()
+        cumsum = 0.0
+        for k in target_list_copy:
+            cumsum += float(target_prob_dict[k]) / prob_sum
+            if rand_num < cumsum:
+                targets.add(k)
+                target_list_copy.remove(k)
+                break
+    return targets
+
+
+def _pick_ba_zero_targets(G, source, target_list, dist, m):
+
+    target_prob_dict = {}
+    for target in target_list:
+        target_prob =  G.degree(target) + 0.00001
         target_prob_dict[target] = target_prob
 
     prob_sum = sum(target_prob_dict.values())
@@ -406,7 +463,7 @@ def run_growing(N, fm, c, bias, p0, n_iter, track_steps=500, rewire_type="ba_two
     WE USE m=2
     """
     #m = 2
-    v_types = ["ba_one", "ba_two"]
+    v_types = ["ba_one", "ba_two", "ba_zero"]
     assert rewire_type in v_types, "Add valid rewire type"
     rewire_type = 'grow_' + rewire_type
     grow_links = eval(rewire_type)
