@@ -68,7 +68,7 @@ def run_diff_homophs(grow_type='tc_two', n_avg=10, fm=.1, remove_neighbor=False,
     Second: same with rho_a, and rho_b
     ?DO rho_a0 and rho_b0?
     """
-    sname = 'growing/'
+    sname = 'grow_diff/'
 
     #if fm <= .11:
     #    savename = sname + 'diff_homophs_{}.p'.format(grow_type)
@@ -83,7 +83,7 @@ def run_diff_homophs(grow_type='tc_two', n_avg=10, fm=.1, remove_neighbor=False,
     bias = np.round(bias, 2)
     names = ['taa', 'tbb', 'rho_a', 'rho_b', 'taa0', 'tbb0', 'rho_a0', 'rho_b0', 'conv_d']
     cval = .95
-    m = 2
+    m = 1
     n_iter = N
     p0 = [[.0035, .0035], [.0035, .0035]]
     results = {n: np.zeros((len(bias), len(bias))) for n in names}
@@ -143,10 +143,12 @@ def plot_rewiring_heatmap(results, rewire_type, savename):
 
     ax[0, 0].set_title(r'$T_{aa}$')
     ax[0, 1].set_title(r'$T_{bb}$')
-    ax[1, 0].set_title(r'$Amp(T_{aa})$')
-    ax[1, 1].set_title(r'$Amp(T_{bb})$')
-
     suptitles = {'pa_one': 'PA 1', 'pa_two': 'PA 2', 'tc_one': 'TC 1', 'tc_two': 'TC 2', 'tc_four': 'TC 4', 'ba_one': 'BA 1', 'ba_two': 'BA 2'}
+    gt = suptitles[rewire_type]
+    ax[1, 0].set_title(r'$T_{aa} - T^{base}_{aa}$')
+    ax[1, 1].set_title(r'$T_{bb} - T^{base}_{bb}$')
+    #ax[1, 1].set_title(r'$Amp(T_{bb})$')
+
     fig.suptitle(suptitles[rewire_type], fontsize=14)
     fig.tight_layout()
     savename = savename.replace('homophs_', 'homophs_t_') + 'df'
@@ -175,9 +177,12 @@ def plot_rewiring_heatmap_cp(results, rewire_type, savename):
 
     ax[0, 0].set_title(r'$\rho_a$')
     ax[0, 1].set_title(r'$\rho_b$')
-    ax[1, 0].set_title(r'$Amp(\rho_a)$')
-    ax[1, 1].set_title(r'$Amp(\rho_b)$')
     suptitles = {'pa_one': 'PA 1', 'pa_two': 'PA 2', 'tc_one': 'TC 1', 'tc_two': 'TC 2', 'tc_four': 'TC 4', 'ba_one': 'BA 1', 'ba_two': 'BA 2'}
+    gt = suptitles[rewire_type]
+    ax[1, 0].set_title(r'$\rho_{a} - \rho^{base}_{a}$')
+    ax[1, 1].set_title(r'$\rho_{b} - \rho^{base}_{b}$')
+    #ax[1, 0].set_title(r'$Amp(\rho_a)$')
+    #ax[1, 1].set_title(r'$Amp(\rho_b)$')
     fig.suptitle(suptitles[rewire_type], fontsize=14)
     fig.tight_layout()
     savename = savename.replace('homophs_', 'homophs_rho_') + 'df'
