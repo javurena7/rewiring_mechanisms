@@ -11,13 +11,13 @@ def obs_from_t(na, t):
     ob = na*t[1] / ((1-na)*(1-t[1]) + na*t[1])
     return oa, ob
 
-def run_equalsize(rewire_type='tc_two', n_avg=10, remove_neighbor=False, n_iter=600000):
+def run_equalsize(grow_type='tc_two', n_avg=10, remove_neighbor=False, n_iter=600000):
     fig, ax = plt.subplots()
 
     if remove_neighbor:
-        sname = 'rewiring/'
+        sname = 'growing/'
     else:
-        sname = 'rewiring_remove_edge/'
+        sname = 'growing_remove_edge/'
 
     savename = sname + 'equalsize_{}.pdf'.format(rewire_type)
     bias = np.arange(.5, 1.05, .05)
@@ -436,13 +436,13 @@ if __name__=='__main__':
     parser.add_argument('--n_avg', type=int, default=2)
     parser.add_argument('--N', type=int, default=1000)
     parser.add_argument('--remove_neighbor', type=bool, default=False)
-    parser.add_argument('--fm', type=float, default=0.5)
+    parser.add_argument('--fm', type=float, default=0.1)
 
     pargs = parser.parse_args()
     assert pargs.analysis in ['eqhomo', 'diffhomo'], "Analysis must be eqhomo or diffhomo"
 
     if pargs.analysis == 'eqhomo':
-        run_equalsize(rewire_type=pargs.grow_type, n_avg=pargs.n_avg, remove_neighbor=pargs.remove_neighbor, N=pargs.N)
+        run_equalsize(grow_type=pargs.grow_type, n_avg=pargs.n_avg, remove_neighbor=pargs.remove_neighbor, N=pargs.N)
     elif pargs.analysis == 'diffhomo':
         run_diff_homophs(grow_type=pargs.grow_type, n_avg=pargs.n_avg, fm=pargs.fm, remove_neighbor=pargs.remove_neighbor, N=pargs.N)
 
