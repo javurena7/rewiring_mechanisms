@@ -4,6 +4,8 @@ from collections import defaultdict
 import copy
 import random
 
+random.seed(100)
+
 def random_network(N, fm, p):
     min_nodes = list(range(int(N * fm)))
     Na = len(min_nodes)
@@ -81,7 +83,7 @@ def rewire_tc_two(G, N, Na, c, bias, remove_neighbor, edgelist, N_edge):
             G.add_edge(newNodeA, newNodeB)
 
 
-def rewire_pa_one(G, N, Na, c, bias, remove_neighbor, edgelist, N_edge): #formerly rewire_links
+def rewire_pa_one(G, N, Na, c, bias, remove_neighbor, edgelist, N_edge, return_link=False): #formerly rewire_links
     """
     PA one - create new edge by following a link from a random node
     """
@@ -94,7 +96,12 @@ def rewire_pa_one(G, N, Na, c, bias, remove_neighbor, edgelist, N_edge): #former
             endNode = np.random.choice(list(G.neighbors(newNode)))
         else:
             endNode = np.random.randint(N)
-        _accept_edge(startNode, endNode, G, edgelist, Na, bias, remove_neighbor, N_edge)
+
+        links = _accept_edge(startNode, endNode, G, edgelist, Na, bias, remove_neighbor, N_edge, return_link)
+        if return_link:
+            return links
+    elif return_link:
+        return [[], []]
 
 
 def _get_candidates_pa_two(G, N):
@@ -333,7 +340,8 @@ def _pick_ba_two_targets(G, source, target_list, dist, m):
     return targets
 
 
-def _accept_edge(startNode, endNode, G, edgelist, Na, bias, remove_neighbor, N_edge):
+def _accept_edge(startNode, endNode, G, edgelist, Na, bias, remove_neighbor, N_edge, return_link=False):
+    # IF return_link is true, then we don't change the network and get the [l1, l2] set of links, were l1 would be added and l2 removed
     accept = False
     if (startNode != endNode) and (not G.has_edge(startNode, endNode)):
         if startNode < Na:
@@ -354,10 +362,18 @@ def _accept_edge(startNode, endNode, G, edgelist, Na, bias, remove_neighbor, N_e
     if accept:
         if remove_neighbor:
             remove_random_neighbor(G, startNode)
+            rem_edg = None
         else:
-            remove_random_edge(G, edgelist, N_edge)
-        edgelist.append([startNode, endNode])
-        G.add_edge(startNode, endNode)
+            rem_edg = remove_random_edge(G, edgelist, N_edge)
+        if not return_link:
+            edgelist.append([startNode, endNode])
+            G.add_edge(startNode, endNode)
+        else:
+        #If we return the selected links, we add the removed edge instead of the new one
+            G.add_edge(*rem_edg)
+            edgelist.append(rem_edg)
+        return [startNode, endNode], rem_edg
+    return [[], []]
 
 
 def remove_random_neighbor(G, startNode):
@@ -367,8 +383,10 @@ def remove_random_neighbor(G, startNode):
 
 def remove_random_edge(G, edgelist, N_edge):
     #N_edge = len(edgelist)
-    edge = np.random.randint(N_edge)
-    G.remove_edge(*edgelist.pop(edge))
+    edge_idx = np.random.randint(N_edge)
+    edge = edgelist.pop(edge_idx)
+    G.remove_edge(*edge)
+    return edge
     #if len(edgelist) < 1:
     #    for edge in np.random.permutation(G.edges):
     #        edgelist.append(edge)
