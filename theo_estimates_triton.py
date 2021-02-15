@@ -301,16 +301,18 @@ def readwrite_results(filename, results):
     f_res[n] = results
 
     with open(filename, 'wb') as f:
-        pickle.dump(results, f)
+        pickle.dump(f_res, f)
 
 pf = lambda x: int(np.round(100 * x, 2))
 
 def run_sa_na(sa, na, specs, path):
-    sbs = np.arange(.5, 1.05, .05)
+    sbs = np.arange(.5, 1.04, .05)
     filename = os.path.join(path, 'sa{}_na{}.p'.format(pf(sa), pf(na)))
     specs['filename'] = filename
-    for sb in sbs:
-        results = parallel_sim(sa, sb, na, specs)
+
+    for _ in range(5):
+        for sb in sbs:
+            results = parallel_sim(sa, sb, na, specs)
 
 
 if __name__ == '__main__':
@@ -324,20 +326,22 @@ if __name__ == '__main__':
 
     pargs = parser.parse_args()
     if pargs.p0 == 'equal':
-        p0 = 0.015 * np.ones((2, 2))
+        p0 = 0.01 * np.ones((2, 2))
     if pargs.p0 == 'sa-core':
-        p0 = 0.015 * np.array([[1, .5], [.5, 0]])
+        p0 = 0.01 * np.array([[1, .5], [.5, 0]])
     if pargs.p0 == 'sb-core':
-        p0 = 0.015 * np.array([[0, .5], [.5, 1]])
+        p0 = 0.01 * np.array([[0, .5], [.5, 1]])
     if pargs.p0 == 'two-com':
-        p0 = 0.015 * np.array([[1, 0], [0, 1]])
+        p0 = 0.01 * np.array([[1, 0], [0, 1]])
 
-    specs = {'N': 100,
+    specs = {'N': 1000,
         'c': 1,
         'p0': p0,
         'remove_neigh': True
         }
     path = os.path.join(pargs.path, pargs.p0)
+    if not os.path.exists(path):
+            os.makedirs(path)
     run_sa_na(pargs.sa, pargs.na, specs, path)
 
 
