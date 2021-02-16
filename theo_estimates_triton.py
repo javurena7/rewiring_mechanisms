@@ -264,10 +264,9 @@ def n_iter_from_specs(p0, N, na):
     return int(n_iter * 10000)
 
 
-def parallel_sim(sa, sb, na, specs={}):
+def parallel_sim(sa, sb, na, c=1, specs={}):
     rewire_type = specs.get('rewire_type', 'pa_one')
     N = specs.get('N', 1000)
-    c = specs.get('c', 1)
     p0 = specs.get('p0', .015 * np.ones((2,2)))
     n_iter = n_iter_from_specs(p0, N, na)
     remove_neigh = specs.get('remove_neigh', True)
@@ -285,7 +284,7 @@ def parallel_sim(sa, sb, na, specs={}):
             'W': W,
             'rho': rho}
     pf = lambda x: int(np.round(100 * x, 2))
-    filename = specs.get('filename', 'sa{}_sb{}_na{}.p'.format(pf(sa), pf(sb), pf(na)))
+    filename = specs.get('filename', 'sa{}_sb{}_na{}_c{}.p'.format(pf(sa), pf(sb), pf(na), pf(c)))
     readwrite_results(filename, results)
     return results
 
@@ -315,6 +314,111 @@ def run_sa_na(sa, na, specs, path):
             results = parallel_sim(sa, sb, na, specs)
 
 
+def run_c_na(c, na, specs, path, fixed_sa=None, fixed_sb=None):
+    s_vals = [.5, .55, .6, .65, .7, .75, .8, .85, .9, .95, 1]
+    if fixed_sa:
+        filename = os.path.join(path, 'cv{}_na{}_sa{}.p'.format(pf(c), pf(na), pf(fixed_sa)))
+    elif fixed_sb:
+        filename = os.path.join(path, 'cv{}_na{}_sb{}.p'.format(pf(c), pf(na), pf(fixed_sb)))
+    else:
+        filename = os.path.join(path, 'cv{}_na{}.p'.format(pf(c), pf(na)))
+    specs['filename'] = filename
+
+    for _ in range(5):
+        for s in s_vals:
+            if fixed_sa:
+                results = parallel_sim(fixed_sa, s, na, c, specs)
+            elif fixed_sb:
+                results = parallel_sim(s, fixed_sb, na, c, specs)
+            else:
+                results = parallel_sim(s, s, na, c, specs)
+
+
+def read_from_path(path):
+    files = os.listdir(path)
+    files = [f for f in files if ('summary' not in f) and f.endswith('.p')]
+    # READ values from filenames
+    sas = np.unique([int(f.split('_')[0][2:])/100 for f in files])
+    nas = np.unique([int(f.split('_')[1][2:4]) for f in files])
+    s_vals = np.zeros((len(sas), len(sas), 5))
+    s_vals[:] = np.nan
+    n_vals = {n: s_vals.copy() for n in nas}
+    for f in files:
+        runs = pickle.load(open(os.path.join(path, f), 'rb'))
+        for vals in runs.values():
+            na = int(vals['na'] * 100)
+            sa = vals['sa']
+            sb = vals['sb']
+
+            sa_idx = np.where(sas == sa)[0][0]
+            sb_idx = np.where(sas == np.round(sb, 2))[0][0]
+
+            arr = n_vals[na][sa_idx][sb_idx]
+            run_idx = np.where(np.isnan(arr))[0][0]
+            n_vals[na][sa_idx][sb_idx][run_idx] = vals['rho'][0]
+
+    with open(os.path.join(path, 'summary.p'), 'wb') as w:
+        pickle.dump(n_vals, w)
+
+    return n_vals
+
+
+def plot_n_vals(path):
+    """
+    Plot five heatmaps of average behaviour for long simulations
+    """
+    n_vals = read_from_path(path)
+
+    sa_vec = np.round(np.arange(10, 21)/20, 2)
+    sb_vec = np.round(np.arange(10, 21)/20, 2)
+    na_vec = list(n_vals.keys())
+
+    fig, axs = plt.subplots(1, len(na_vec), figsize=(2*len(na_vec), 2), sharey=True)
+    fig2, axs2 = plt.subplots(1, len(na_vec), figsize=(2*len(na_vec), 2), sharey=True)
+    for na, ax, ax2 in zip(na_vec, axs, axs2):
+        rho_mean = pd.DataFrame(n_vals[na].mean(axis=2), columns=sa_vec, index=sb_vec)
+        rho_std = pd.DataFrame(n_vals[na].std(axis=2), columns=sa_vec, index=sb_vec)
+        sns.heatmap(rho_mean, center=1, ax=ax, vmin=0, vmax=2)
+        sns.heatmap(rho_std, center=0, ax=ax2, vmin=0)
+        ax.set_title('na={}'.format(na))
+        ax.set_xlabel(r'$s_b$')
+        ax.set_ylabel(r'$s_a$')
+        ax2.set_title('na={}'.format(na))
+        ax2.set_xlabel(r'$s_b$')
+        ax2.set_ylabel(r'$s_a$')
+    ax.invert_yaxis()
+    ax2.invert_yaxis()
+    fig.suptitle('Measure of core-periphery, ' + r'$\rho$')
+    fig2.suptitle('Std. of core-periphery, ' + r'$\sigma_{\rho}$')
+    fig.tight_layout()
+    fig2.tight_layout()
+    fig.savefig(os.path.join(path, 'plot.pdf'))
+    fig2.savefig(os.path.join(path, 'plot_std.pdf'))
+
+
+def plot_s_eq(path):
+    """
+    Plot sa=sb from simulations
+    """
+    n_vals = read_from_path(path)
+    s_vec = np.round(np.arange(10, 21)/20, 2)
+    na_vec = list(n_vals.keys())
+
+    fig, ax = plt.subplots(figsize=(4, 4))
+    col = ['r', 'b', 'k', 'g', 'c']
+    for na, c in zip(na_vec, col):
+        data = n_vals[na]
+        rho_mean = data.diagonal().mean(0)
+        ax.plot(s_vec, rho_mean, color=c, alpha=.8, label='na={}'.format(na))
+        for i in range(5):
+            ax.plot(s_vec, data[:, :, i].diagonal(), '.', color=c, alpha=.1)
+    fig.legend(loc=0)
+    ax.set_xlabel(r'$s_a = s_b$')
+    ax.set_ylabel(r'$\rho$')
+    fig.tight_layout()
+    fig.savefig(os.path.join(path, 'plot_eqs.pdf'))
+
+
 if __name__ == '__main__':
     import argparse
 
@@ -323,6 +427,9 @@ if __name__ == '__main__':
     parser.add_argument('--p0', type=str, default='equal')
     parser.add_argument('--na', type=float, default=0.50)
     parser.add_argument('--path', type=str, default='./')
+    parser.add_argument('--c', type=float) # IF c, run for a sa=sb
+    parser.add_argument('--fixed_sa', type=float) # If c and this, run fix sa and all sb
+    parser.add_argument('--fixed_sb', type=float) # IF c and this, run fix sb and all sa
 
     pargs = parser.parse_args()
     if pargs.p0 == 'equal':
@@ -334,16 +441,20 @@ if __name__ == '__main__':
     if pargs.p0 == 'two-com':
         p0 = 0.01 * np.array([[1, 0], [0, 1]])
 
+    path = os.path.join(pargs.path, pargs.p0)
     specs = {'N': 1000,
-        'c': 1,
         'p0': p0,
         'remove_neigh': True
         }
-    path = os.path.join(pargs.path, pargs.p0)
-    if not os.path.exists(path):
+    if pargs.c:
+        path += '_c'
+        if not os.path.exists(path):
             os.makedirs(path)
-    run_sa_na(pargs.sa, pargs.na, specs, path)
+        run_c_na(pargs.c, pargs.na, specs, path, pargs.fixed_sa, pargs.fixed_sb)
 
-
-
+    else:
+        specs['c'] = 1
+        if not os.path.exists(path):
+                os.makedirs(path)
+        run_sa_na(pargs.sa, pargs.na, specs, path)
 
