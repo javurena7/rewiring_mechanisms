@@ -167,7 +167,7 @@ def rewire_tc_four(G, N, Na, c, bias, remove_neighbor, edgelist, N_edge):
         _accept_edge(startNode, endNode, G, edgelist, Na, bias, remove_neighbor, N_edge)
 
 
-def ba_starter(N, fm, h_aa, h_bb):
+def ba_starter(N, fm, h_aa, h_bb, p0):
     Na = int(N * fm)
     minority_nodes = range(Na)
     G = nx.Graph()
@@ -227,18 +227,46 @@ def grow_ba_zero(G, sources, target_list, dist, m):
     target_list.append(source)
 
 
-def grow_ba_two(G, sources, target_list, dist, m):
+def grow_ba_two(G, sources, target_list, dist, m, cval, ret_counts=False):
     """
     BA 2 - Barabasi-Albert model where we pick nodes propto degree, and accept it with prob homophily
     """
 
     source = np.random.choice(sources)
     _ = sources.remove(source)
-    targets = _pick_ba_two_targets(G, source, target_list, dist, m)
+    targets = _pick_ba_two_targets(G, source, target_list, dist, m, cval)
+    if ret_counts:
+        counts = classify_counts(source, targets, G, m)
     if targets != set():
         G.add_edges_from(zip([source] * len(targets), targets))
     target_list.append(source)
+    if ret_counts:
+        return counts
 
+
+def classify_counts(source, targets, G, m):
+    """
+    Classify counts if the added links are: AA, AB, AN, BA, BB, BN
+    """
+    counts = np.zeros(6)
+    sr_type = G.nodes[source]['color']
+    for target in targets:
+        tg_type = G.nodes[target]['color']
+        if sr_type == 'red':
+            if tg_type == 'red':
+                counts[0] += 1
+            elif tg_type == 'blue':
+                counts[1] += 1
+        elif sr_type == 'blue':
+            if tg_type == 'red':
+                counts[3] += 1
+            elif tg_type == 'blue':
+                counts[4] += 1
+    if sr_type == 'red':
+        counts[2] = m - sum(counts[:2])
+    elif sr_type == 'blue':
+        counts[5] = m - sum(counts[3:5])
+    return list(counts)
 
 def _pick_ba_one_targets(G, source, target_list, dist, m):
 
@@ -298,7 +326,7 @@ def _pick_ba_zero_targets(G, source, target_list, dist, m):
     return targets
 
 
-def _pick_ba_two_targets(G, source, target_list, dist, m):
+def _pick_ba_two_targets(G, source, target_list, dist, m, cval):
     """
     Pick set of new neighbors for node source via second BA model.
     Here, a candidate is selected with probability proportional to degree, and
@@ -310,19 +338,20 @@ def _pick_ba_two_targets(G, source, target_list, dist, m):
     dist: dict of homophilies
     m: number of timess the experiment is run.
     """
+    target_list_copy = copy.copy(target_list)
+    candidates = _choose_random_targets(m, cval, target_list_copy, dist, source)
+    m_ba = m - len(candidates)
     target_prob_dict = {}
-    for target in target_list:
+    for target in target_list_copy:
         target_prob =  G.degree(target) + 0.00001
         target_prob_dict[target] = target_prob
 
     prob_sum = sum(target_prob_dict.values())
-
-    targets = set()
-    target_list_copy = copy.copy(target_list)
     count_looking = 0
+    targets = set()
     if prob_sum == 0:
         return targets
-    candidates = set()
+    candidates = set(candidates)
     while len(candidates) < m:
         count_looking += 1
         if count_looking > len(G): # if node fails to find target
@@ -333,11 +362,23 @@ def _pick_ba_two_targets(G, source, target_list, dist, m):
             cumsum += float(target_prob_dict[k]) / prob_sum
             if rand_num < cumsum:
                 candidates.add(k)
-                if random.random() < dist[(source, k)]:
-                    targets.add(k)
-                    target_list_copy.remove(k)
                 break
+    # check all candidates and add them
+    targets = set()
+    for k in candidates:
+        if random.random() < dist[(source, k)]:
+            targets.add(k)
     return targets
+
+def _choose_random_targets(m, cval, target_list_copy, dist, source):
+    m_rand = np.random.binomial(m, 1-cval)
+    if len(target_list_copy) >= m_rand:
+        candidates = np.random.choice(target_list_copy, m_rand, replace=False)
+    else:
+        candidates = copy.copy(target_list_copy)
+    for k in target_list_copy:
+        target_list_copy.remove(k)
+    return candidates
 
 
 def _accept_edge(startNode, endNode, G, edgelist, Na, bias, remove_neighbor, N_edge, return_link=False):
@@ -473,11 +514,11 @@ def run_rewiring(N, fm, c, bias, p0, n_iter, track_steps=500, rewire_type="tc_tw
     return p, t, P, rho, converg_d
 
 
-def run_growing(N, fm, c, bias, p0, n_iter, track_steps=500, rewire_type="ba_two", remove_neighbor=True, m=2):
+def run_growing(N, fm, c, bias, p0, n_iter, track_steps=500, rewire_type="ba_two", remove_neighbor=True, m=2, ret_counts=False):
     """
     Run a Barabasi-Albert model for growing a network
     rewire_type: (str) ba_one, ba_two
-    WE DONT USE c, p0, n_iter, remove_neighbor
+    WE DONT USE p0, n_iter, remove_neighbor
     WE USE m=2
     """
     #m = 2
@@ -487,34 +528,32 @@ def run_growing(N, fm, c, bias, p0, n_iter, track_steps=500, rewire_type="ba_two
     grow_links = eval(rewire_type)
     #G, Na = random_network(N, fm, p0)
     h_aa, h_bb = bias
-    G, Na, dist = ba_starter(N, fm, h_aa, h_bb)
+    G, Na, dist = ba_starter(N, fm, h_aa, h_bb, p0)
     sources = list(range(N))
     target_list = list(np.random.choice(sources, m, replace=False))
+    counts = []
     for tgt in target_list:
         _ = sources.remove(tgt)
     P = defaultdict(list)
     K = defaultdict(list)
     for i in range(N-m):
-        grow_links(G, sources, target_list, dist, m)
         if i % track_steps == 0:
             p = get_l(G, Na) # At some point this has also been get_p
             P['l_aa'].append(p[0])
             P['l_ab'].append(p[1])
             P['l_bb'].append(p[2])
-            Ka, Kb = total_degree(G, Na)
+        if ret_counts:
+            cnt = grow_links(G, sources, target_list, dist, m, c, ret_counts)
+            counts.append(cnt)
+        else:
+            grow_links(G, sources, target_list, dist, m, c, ret_counts)
 
-            K['Ka'].append(Ka)
-            K['Kb'].append(Kb)
-
-        if i == int(.95 * n_iter):
-            p_95 = get_p(G, Na)
-            t_95 = get_t(p_95)
-
+    K = None # Instead of counts we used to have K (dict tot deg)
+    converg_d = None
     p = get_p(G, Na)
     t = get_t(p)
-    converg_d = .5 * (np.abs(t[0] - t_95[0]) + np.abs(t[1] - t_95[1]))
     rho = measure_core_periph(*t)
-    return p, t, (P, K), rho, converg_d
+    return p, t, (P, counts), rho, converg_d
 
 def total_degree(G, Na):
     Ka, Kb = 0, 0

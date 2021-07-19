@@ -3,8 +3,8 @@ import networkx as nx
 import numpy as np
 import matplotlib.pyplot as plt
 
-N = 1500
-Na = 150
+N = 2500
+Na = 250
 haa = 1
 hbb = 1
 Nb = N - Na

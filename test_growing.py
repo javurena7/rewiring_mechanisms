@@ -121,6 +121,58 @@ def run_diff_homophs(grow_type='tc_two', n_avg=10, fm=.1, remove_neighbor=False,
     #plot_rewiring_heatmap(fig, ax, results, bias)
 
 
+def run_baselines(grow_type='tc_two', n_avg=10, fm=.1, remove_neighbor=False, N=1000):
+    """
+    For a fixed c=0.95, compare different sa, sb values.
+    Two plots: first has taa, tbb and (taa-taa0)/taa0, and (tbb - tbb0)/tbb0
+    where taa0 implies a comparison with the baseline (ba_one)
+    Second: same with rho_a, and rho_b
+    ?DO rho_a0 and rho_b0?
+    """
+    sname = 'baselines/'
+
+    #if fm <= .11:
+    #    savename = sname + 'diff_homophs_{}.p'.format(grow_type)
+    if fm >= .49:
+        savename = sname + 'diff_homophs_eqsize_{}.p'.format(grow_type)
+    else:
+        savename = sname + 'diff_homophs_fm{}_{}.p'.format(int(100*fm), grow_type)
+
+    #fig, ax = plt.subplots(2, 2)
+    #fig_a, ax_a = plt.subplots(2, 2)
+    bias = np.arange(.5, 1.05, .05) #np.arange(.5, 1.1, .1)
+    bias = np.round(bias, 2)
+    names = ['taa', 'tbb', 'rho_a', 'rho_b']
+    cval = .95
+    m = 2
+    n_iter = N
+    p0 = [[.0035, .0035], [.0035, .0035]]
+    results = {n: np.zeros((len(bias), len(bias))) for n in names}
+    #results['cval'] = cval
+    results['bias'] = bias
+    results['m'] = m
+    #results['n_iter'] = n_iter
+    #results['p0'] = p0
+    results['N'] = N
+    Na = int(N * fm)
+    for i, sa in enumerate(bias):
+        taas, tbbs, rho_as, rho_bs = [], [], [], []
+        print("sa={}".format(sa))
+        for j, sb in enumerate(bias):
+            print("       sb={}".format(sb))
+            hms = [sa, sb]
+            taa, tbb, rho_a, rho_b = 0, 0, 0, 0
+            for _ in range(n_avg):
+                if grow_type=='ba_zero':
+                    _, t, _, corr, _ = apm.run_growing(N, fm, cval, hms, p0, n_iter=n_iter, track_steps=n_iter, rewire_type=grow_type, remove_neighbor=remove_neighbor, m=m)
+                elif grow_type=='hsbm':
+                    t, corr = apm.run_hsbm(N, Na, sa, sb, m)
+                taa += t[0]; tbb += t[1]; rho_a += corr[0]; rho_b += corr[1]
+            taa /= n_avg; tbb /= n_avg; rho_a /= n_avg; rho_b /= n_avg
+            _save_baseline_results(taa, tbb, rho_a, rho_b, results, i, j, savename, grow_type)
+    #plot_rewiring_heatmap(fig, ax, results, bias)
+
+
 def plot_rewiring_heatmap(results, rewire_type, savename):
     fig, ax = plt.subplots(2, 2, sharex=True, sharey=True)
     bias = np.round(results['bias'], 2)
@@ -154,6 +206,7 @@ def plot_rewiring_heatmap(results, rewire_type, savename):
     savename = savename.replace('homophs_', 'homophs_t_') + 'df'
     fig.savefig(savename)
     plt.close(fig)
+
 
 def plot_rewiring_heatmap_cp(results, rewire_type, savename):
     fig, ax = plt.subplots(2, 2, sharex=True, sharey=True)
@@ -207,6 +260,35 @@ def plot_convergence_heatmap(results, rewire_type, savename):
     fig.savefig(savename)
     plt.close(fig)
 
+def plot_baseline_heatmap(results, rewire_type, savename):
+    fig, ax = plt.subplots(2, 2, sharex=True, sharey=True)
+    bias = np.round(results['bias'], 2)
+    sns.heatmap(results['taa'], ax=ax[0, 0], xticklabels=bias, yticklabels=bias)
+    sns.heatmap(results['tbb'], ax=ax[0, 1], xticklabels=bias, yticklabels=bias)
+    sns.heatmap(results['rho_a'], ax=ax[1, 0], xticklabels=bias, yticklabels=bias, center=1)
+    sns.heatmap(results['rho_b'], ax=ax[1, 1], xticklabels=bias, yticklabels=bias, center=1)
+    ax[0, 0].invert_yaxis()
+
+    ax[0, 0].set_ylabel(r'$s_a$')
+    ax[1, 0].set_ylabel(r'$s_a$')
+    ax[1, 0].set_xlabel(r'$s_b$')
+    ax[1, 1].set_xlabel(r'$s_b$')
+
+    ax[0, 0].set_title(r'$T_{aa}$')
+    ax[0, 1].set_title(r'$T_{bb}$')
+    suptitles = {'pa_one': 'PA 1', 'pa_two': 'PA 2', 'tc_one': 'TC 1', 'tc_two': 'TC 2', 'tc_four': 'TC 4', 'ba_one': 'BA 1', 'ba_two': 'BA 2', 'ba_zero': 'Baseline PA', 'hsbm': 'Homoph. SBM'}
+    gt = suptitles[rewire_type]
+    ax[1, 0].set_title(r'$\rho_a$')
+    ax[1, 1].set_title(r'$\rho_b$')
+    #ax[1, 1].set_title(r'$Amp(T_{bb})$')
+
+    fig.suptitle(suptitles[rewire_type], fontsize=14)
+    fig.tight_layout()
+    savename = savename.replace('homophs_', 'homophs_t_') + 'df'
+    fig.savefig(savename)
+    plt.close(fig)
+
+
 def _save_results(taa, tbb, rho_a, rho_b, taa0, tbb0, rho_a0, rho_b0, results, i, j, savename, rewire_type, conv_d):
     results['taa'][i, j] = taa
     results['tbb'][i, j] = tbb
@@ -223,6 +305,16 @@ def _save_results(taa, tbb, rho_a, rho_b, taa0, tbb0, rho_a0, rho_b0, results, i
     plot_rewiring_heatmap(results, rewire_type, savename)
     plot_rewiring_heatmap_cp(results, rewire_type, savename)
     plot_convergence_heatmap(results, rewire_type, savename)
+
+
+def _save_baseline_results(taa, tbb, rho_a, rho_b, results, i, j, savename, rewire_type):
+    results['taa'][i, j] = taa
+    results['tbb'][i, j] = tbb
+    results['rho_a'][i, j] = rho_b
+    results['rho_b'][i, j] = rho_a
+
+    pickle.dump(results, open(savename, 'wb'))
+    plot_baseline_heatmap(results, rewire_type, savename)
 
 
 def read_results_plot_hmaps(rewire_type, fm, update_a=None):
@@ -436,20 +528,22 @@ if __name__=='__main__':
     import argparse
     parser = argparse.ArgumentParser()
 
-    parser.add_argument('--grow_type', type=str, default='ba_two')
-    parser.add_argument('--analysis', type=str, default='diffhomo')
+    parser.add_argument('--grow_type', type=str, default='ba_zero')
+    parser.add_argument('--analysis', type=str, default='baselines')
     parser.add_argument('--n_avg', type=int, default=2)
     parser.add_argument('--N', type=int, default=1000)
     parser.add_argument('--remove_neighbor', type=bool, default=False)
-    parser.add_argument('--fm', type=float, default=0.1)
+    parser.add_argument('--fm', type=float, default=0.5)
 
     pargs = parser.parse_args()
-    assert pargs.analysis in ['eqhomo', 'diffhomo'], "Analysis must be eqhomo or diffhomo"
+    assert pargs.analysis in ['eqhomo', 'diffhomo', 'baselines'], "Analysis must be eqhomo or diffhomo or baselines"
 
     if pargs.analysis == 'eqhomo':
         run_equalsize(grow_type=pargs.grow_type, n_avg=pargs.n_avg, remove_neighbor=pargs.remove_neighbor, N=pargs.N)
     elif pargs.analysis == 'diffhomo':
         run_diff_homophs(grow_type=pargs.grow_type, n_avg=pargs.n_avg, fm=pargs.fm, remove_neighbor=pargs.remove_neighbor, N=pargs.N)
+    elif pargs.analysis == 'baselines':
+        run_baselines(grow_type=pargs.grow_type, n_avg=pargs.n_avg, fm=pargs.fm, remove_neighbor=pargs.remove_neighbor, N=pargs.N)
 
 
     #for rt in rewire_types:

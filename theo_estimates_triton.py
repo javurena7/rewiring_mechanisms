@@ -7,7 +7,8 @@ from scipy.integrate import odeint
 from scipy.optimize import fsolve
 import pickle
 import os
-
+from re import search as re_search
+import theo_estimates as te
 
 def paa_par_re(na, sa, sb):
     """
@@ -334,12 +335,23 @@ def run_c_na(c, na, specs, path, fixed_sa=None, fixed_sb=None):
                 results = parallel_sim(s, s, na, c, specs)
 
 
-def read_from_path(path):
+def vals_from_names(files, ptrn):
+    vals = []
+    for f in files:
+        for p in f.split('_'):
+            if ptrn in p:
+                num = re_search('\d+', p).group()
+                vals.append(int(num))
+    return vals
+
+
+
+def read_sa_na_from_path(path):
     files = os.listdir(path)
     files = [f for f in files if ('summary' not in f) and f.endswith('.p')]
     # READ values from filenames
-    sas = np.unique([int(f.split('_')[0][2:])/100 for f in files])
-    nas = np.unique([int(f.split('_')[1][2:4]) for f in files])
+    sas = np.unique([v/100 for v in vals_from_names(files, 'sa')])
+    nas = np.unique(vals_from_names(files, 'na'))
     s_vals = np.zeros((len(sas), len(sas), 5))
     s_vals[:] = np.nan
     n_vals = {n: s_vals.copy() for n in nas}
@@ -363,11 +375,86 @@ def read_from_path(path):
     return n_vals
 
 
-def plot_n_vals(path):
+def read_cv_na_from_path(path):
+    """
+    This plot is a heatmap of cv-sb, with a fixed sa value
+    """
+    files = os.listdir(path)
+    files = [f for f in files if ('summary' not in f) and f.endswith('.p')]
+    # READ values from filenames
+    cvs = np.unique([v/100 for v in vals_from_names(files, 'cv')])
+    sbs = np.round(np.linspace(.5, 1, 11), 2)
+    nas = np.unique(vals_from_names(files, 'na'))
+    s_vals = np.zeros((len(cvs), len(sbs), 5))
+    s_vals[:] = np.nan
+    n_vals = {n: s_vals.copy() for n in nas}
+    for f in files:
+        runs = pickle.load(open(os.path.join(path, f), 'rb'))
+        for vals in runs.values():
+            na = int(vals['na'] * 100)
+            sa = vals['sa']
+            sb = vals['sb']
+            cv = vals['c']
+
+            cv_idx = np.where(cvs == cv)[0][0]
+            sb_idx = np.where(sbs == np.round(sb, 2))[0][0]
+
+            arr = n_vals[na][cv_idx][sb_idx]
+            run_idx = np.where(np.isnan(arr))[0][0]
+            n_vals[na][cv_idx][sb_idx][run_idx] = vals['rho'][0]
+
+    with open(os.path.join(path, 'summary_cv_na.p'), 'wb') as w:
+        pickle.dump(n_vals, w)
+
+    return n_vals
+
+def plot_theosim_comparison(path):
+    cvs = [.1, .3, .5, .7, 1]
+    nas = [.1, .5, .7]
+    sa = .75
+    sbs_theo = np.round(np.linspace(.5, 1, 51), 2)
+    fig, axs = plt.subplots(1, len(nas), figsize=(2*len(nas), 3), sharey=True)
+    colors = ['b', 'c', 'green', 'yellow', 'red']
+    for na, ax in zip(nas, axs):
+        for cv, color in zip(cvs, colors):
+            # Plot theo values
+            theo_t = [te.solve2_paa_pbb(na=na, sa=sa, sb=sb, c=cv) for sb in sbs_theo]
+            theo_rho = [te.rho_from_t(t) for t in theo_t]
+            stab = [te.fixed_point_stability(na=na, sa=sa, sb=sb, c=cv) for sb in sbs_theo]
+# stab come in (trace, determinant) pairs
+            stab_dec = np.array([-1 if st[1] < .001 else 1 for st in stab])
+            if any(stab_dec < 0):
+                lt = '--'
+            else:
+                lt = ''
+            ax.plot(sbs_theo, theo_rho, lt, color=color)
+            ax.set_xlim((.49, 1.01))
+            ax.set_ylim((-.01, 2.01))
+
+            # Plot simulation values
+            filename = 'cv{}_na{}_sa{}.p'.format(int(100*cv), int(100*na), int(100*sa))
+            filepath = os.path.join(path, filename)
+            res = pickle.load(open(filepath, 'rb'))
+            sbs_u = np.unique([sb_run['sb'] for sb_run in res.values()])
+            sbs_sim = {int(sb*100): [] for sb in sbs_u}
+            for sb_run in res.values():
+                sbs_sim[int(sb_run['sb']*100)].append(sb_run['rho'][0])
+            sbs_sim = [np.mean(sbs_sim[int(sb*100)]) for sb in sbs_u]
+            ax.plot(sbs_u, sbs_sim, 'x', label='cv={}'.format(cv), color=color)
+        ax.set_xlabel(r'$s_b$')
+        ax.set_ylabel(r'$\rho$')
+        ax.set_title('na={}'.format(na))
+    ax.legend(loc=0)
+    fig.suptitle('Simulations and approximations for CP measure, sa={}'.format(sa))
+    fig.tight_layout()
+    fig.savefig(os.path.join(path, 'sim_theo_comp.pdf'))
+
+
+def plot_sa_na_vals(path):
     """
     Plot five heatmaps of average behaviour for long simulations
     """
-    n_vals = read_from_path(path)
+    n_vals = read_sa_na_from_path(path)
 
     sa_vec = np.round(np.arange(10, 21)/20, 2)
     sb_vec = np.round(np.arange(10, 21)/20, 2)
@@ -376,8 +463,8 @@ def plot_n_vals(path):
     fig, axs = plt.subplots(1, len(na_vec), figsize=(2*len(na_vec), 2), sharey=True)
     fig2, axs2 = plt.subplots(1, len(na_vec), figsize=(2*len(na_vec), 2), sharey=True)
     for na, ax, ax2 in zip(na_vec, axs, axs2):
-        rho_mean = pd.DataFrame(n_vals[na].mean(axis=2), columns=sa_vec, index=sb_vec)
-        rho_std = pd.DataFrame(n_vals[na].std(axis=2), columns=sa_vec, index=sb_vec)
+        rho_mean = pd.DataFrame(n_vals[na][:, :, :3].mean(axis=2), columns=sa_vec, index=sb_vec)
+        rho_std = pd.DataFrame(n_vals[na][:, :, :3].std(axis=2), columns=sa_vec, index=sb_vec)
         sns.heatmap(rho_mean, center=1, ax=ax, vmin=0, vmax=2)
         sns.heatmap(rho_std, center=0, ax=ax2, vmin=0)
         ax.set_title('na={}'.format(na))
@@ -386,6 +473,39 @@ def plot_n_vals(path):
         ax2.set_title('na={}'.format(na))
         ax2.set_xlabel(r'$s_b$')
         ax2.set_ylabel(r'$s_a$')
+    ax.invert_yaxis()
+    ax2.invert_yaxis()
+    fig.suptitle('Measure of core-periphery, ' + r'$\rho$')
+    fig2.suptitle('Std. of core-periphery, ' + r'$\sigma_{\rho}$')
+    fig.tight_layout()
+    fig2.tight_layout()
+    fig.savefig(os.path.join(path, 'plot.pdf'))
+    fig2.savefig(os.path.join(path, 'plot_std.pdf'))
+
+
+def plot_cv_na_vals(path):
+    """
+    Plot five heatmaps of average behaviour for long simulations
+    """
+    n_vals = read_cv_na_from_path(path)
+
+    cv_vec = np.round(np.linspace(.5, 1, 11), 2)
+    sb_vec = np.round(np.linspace(.5, 1, 11), 2)
+    na_vec = list(n_vals.keys())
+
+    fig, axs = plt.subplots(1, len(na_vec), figsize=(2*len(na_vec), 2), sharey=True)
+    fig2, axs2 = plt.subplots(1, len(na_vec), figsize=(2*len(na_vec), 2), sharey=True)
+    for na, ax, ax2 in zip(na_vec, axs, axs2):
+        rho_mean = pd.DataFrame(n_vals[na][:, :, :3].mean(axis=2), columns=cv_vec, index=sb_vec)
+        rho_std = pd.DataFrame(n_vals[na].std(axis=2), columns=cv_vec, index=sb_vec)
+        sns.heatmap(rho_mean, center=1, ax=ax, vmin=0, vmax=2)
+        sns.heatmap(rho_std, center=0, ax=ax2, vmin=0)
+        ax.set_title('na={}'.format(na))
+        ax.set_xlabel(r'$s_b$')
+        ax.set_ylabel(r'$c$')
+        ax2.set_title('na={}'.format(na))
+        ax2.set_xlabel(r'$s_b$')
+        ax2.set_ylabel(r'$c$')
     ax.invert_yaxis()
     ax2.invert_yaxis()
     fig.suptitle('Measure of core-periphery, ' + r'$\rho$')
