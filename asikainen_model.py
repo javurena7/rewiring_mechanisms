@@ -1,6 +1,6 @@
 import networkx as nx
 import numpy as np
-from collections import defaultdict
+from collections import defaultdict, Counter
 import copy
 import random
 
@@ -104,6 +104,147 @@ def rewire_pa_one(G, N, Na, c, bias, remove_neighbor, edgelist, N_edge, return_l
         return [[], []]
 
 
+def rewire_network_stepxstep(G, N, Na, c, bias, m, n_i):
+    """
+    PA one - create new edge by following a link from a random node
+    """
+    x_i = {'aa': {}, 'ab': {}, 'ba': {}, 'bb':{}}
+    n_i_ = n_i
+    #SANITY CHECK
+    #tota = sum([k*v for k, v in n_i['na'].items()])
+    #nit = get_ni(G, Na)
+    #tott = sum([k*v for k, v in nit['na'].items()])
+    #if tota != tott:
+    #    import pdb; pdb.set_trace()
+    for _ in range(m):
+        n_link, d_link, ltype, typn, typd = _rewire_candidates_exact(G, N, Na, c, bias)
+        #G_old = G.copy()
+        if d_link and n_link:
+            tgt_deg = G.degree(n_link[1])
+            x_i[ltype][tgt_deg] = x_i[ltype].get(tgt_deg, 0) + 1
+            n_i[typn][tgt_deg+1] = n_i[typn].get(tgt_deg + 1, 0) + 1
+            n_i[typn][tgt_deg] = n_i[typn].get(tgt_deg, 0) - 1 # remove get
+
+            del_deg = G.degree(d_link[1])
+            n_i[typd][del_deg] = n_i[typd].get(del_deg, 0) - 1 # remove get
+            n_i[typd][del_deg-1] = n_i[typd].get(del_deg - 1, 0) + 1
+
+            n_i_['na'] = {k: v for k, v in n_i['na'].items() if v > 0}
+            n_i_['nb'] = {k: v for k, v in n_i['nb'].items() if v > 0}
+
+
+            G.add_edge(*n_link)
+            G.remove_edge(*d_link)
+
+
+            #SANITY CHECK - compare n_i with deg dists from G
+            #tota = sum([k*v for k, v in n_i['na'].items()])
+            #totb = sum([k*v for k, v in n_i['nb'].items()])
+            #nit = get_ni(G, Na)
+            #ta = sum([k*v for k, v in nit['na'].items()])
+            #tb = sum([k*v for k, v in nit['nb'].items()])
+            #print('Tota: {} - {}     Totb: {} - {}'.format(tota, ta, totb, tb))
+
+
+    return x_i, n_i_
+
+
+def _rewire_candidates_exact(G, N, Na, c, bias):
+    """:
+    ltype: type of new link (aa, ab, ba, bb)
+    typn: type on new node that is rewired (na, nb)
+    typd: type of node whose link is deleted (na, nb)
+    """
+    startNode = np.random.randint(N)
+
+    if G.degree(startNode) > 0:
+        neighs = set(G.neighbors(startNode))
+        fset = set(range(N))
+        fset = fset.difference(neighs)
+        fset = fset.difference(set([startNode]))
+        if np.random.random() < c:
+            target_prob_list = []
+            target_list = []
+            for target in fset:
+                tgt_pr = G.degree(target)
+                target_prob = tgt_pr if tgt_pr > 0 else 0.00001
+                target_prob_list.append(target_prob)
+                target_list.append(target)
+            probs = np.array(target_prob_list) # / sum(target_prob_list)
+            endNode = random.choices(target_list, weights=probs)[0]
+        else:
+            endNode = np.random.choice(list(fset))
+        delNode = np.random.choice(list(neighs))
+        n_link = (startNode, endNode)
+        d_link = (startNode, delNode)
+        n_link, d_link, ltype, typn, typd = classify_accept_nodes(n_link, d_link, Na, bias)
+    else:
+        n_link, d_link, ltype, typn, typd = (), (), None, None, None
+    return n_link, d_link, ltype, typn, typd
+
+def classify_accept_nodes(n_link, d_link, Na, bias):
+    accept = False
+    startNode, endNode = n_link
+    if startNode < Na:
+        if endNode < Na:
+            typn = 'na'
+            ltype = 'aa'
+            if np.random.random() < bias[0]:
+                accept = True
+        else:
+            typn = 'nb'
+            ltype = 'ab'
+            if np.random.random() > bias[0]:
+                accept = True
+    else:
+        if endNode >= Na:
+            typn = 'nb'
+            ltype = 'bb'
+            if np.random.random() < bias[1]:
+                accept = True
+        else:
+            ltype = 'ba'
+            typn = 'na'
+            if np.random.random() > bias[1]:
+                accept = True
+
+    dnode = d_link[1]
+    if dnode < Na:
+        typd = 'na'
+    else:
+        typd = 'nb'
+
+    if accept:
+        return n_link, d_link, ltype, typn, typd
+    else:
+        return (startNode,), (), None, None, None
+
+
+def _rewired_link_data(startNode, endNode, G, Na, bias):
+    accept = False
+    if (startNode != endNode) and (not G.has_edge(startNode, endNode)):
+        if startNode < Na:
+            if endNode < Na:
+                if np.random.random() < bias[0]:
+                    accept = True
+            else:
+                if np.random.random() > bias[0]:
+                    accept = True
+        else:
+            if endNode >= Na:
+                if np.random.random() < bias[1]:
+                    accept = True
+            else:
+                if np.random.random() > bias[1]:
+                    accept = True
+
+    if accept:
+        lostNode = np.random.choice(list(G.neighbors(startNode)))
+        return [(startNode, endNode), (startNode, lostNode)]
+    else:
+        return []
+
+
 def _get_candidates_pa_two(G, N):
 
     newNode = np.random.randint(N)
@@ -167,7 +308,7 @@ def rewire_tc_four(G, N, Na, c, bias, remove_neighbor, edgelist, N_edge):
         _accept_edge(startNode, endNode, G, edgelist, Na, bias, remove_neighbor, N_edge)
 
 
-def ba_starter(N, fm, h_aa, h_bb, p0):
+def ba_starter(N, fm, h_aa, h_bb):
     Na = int(N * fm)
     minority_nodes = range(Na)
     G = nx.Graph()
@@ -227,21 +368,82 @@ def grow_ba_zero(G, sources, target_list, dist, m):
     target_list.append(source)
 
 
-def grow_ba_two(G, sources, target_list, dist, m, cval, ret_counts=False):
+def grow_ba_two(G, sources, target_list, dist, m, cval, ret_counts=False, n_i={}, Na=0):
     """
     BA 2 - Barabasi-Albert model where we pick nodes propto degree, and accept it with prob homophily
     """
 
     source = np.random.choice(sources)
     _ = sources.remove(source)
-    targets = _pick_ba_two_targets(G, source, target_list, dist, m, cval)
+    targets = _pick_ba_two_targets_exact(G, source, target_list, dist, m, cval)
     if ret_counts:
         counts = classify_counts(source, targets, G, m)
+    if n_i:
+        x_i = classify_targets(G, source, targets, Na)
+        n_i = add_target_counts(n_i, x_i) #Note, this is actually n[i+1]
     if targets != set():
         G.add_edges_from(zip([source] * len(targets), targets))
     target_list.append(source)
+
+    ##### SANITY CHECK - compare with n_i
+    #na_degs = Counter([G.degree(i) for i in range(Na)])
+    #nb_degs = Counter([G.degree(i) for i in range(Na, G.number_of_nodes())])
+
     if ret_counts:
         return counts
+    if n_i:
+        return x_i, n_i
+
+def classify_targets(G, source, targets, Na):
+    """
+    for each dict of counts of new edges (aa, ab, bb, ba), each
+        entry is of the formart deg: count (so count new edges of degree deg)
+    """
+    x_i = {'aa': {}, 'ab': {}, 'ba': {}, 'bb': {}}
+    sg = 'a' if source < Na else 'b'
+    for tgt in targets:
+        tg = 'a' if tgt < Na else 'b'
+        tgt_deg = G.degree(tgt)
+        x_i[sg + tg][tgt_deg] = x_i[sg + tg].get(tgt_deg, 0) + 1
+    return x_i
+
+def classify_rewired_links(G, links, Na):
+    """
+    for each dict of counts of new edges (aa, ab, bb, ba), each
+        entry is of the formart deg: count (so count new edges of degree deg)
+    """
+    x_i = {'aa': {}, 'ab': {}, 'ba': {}, 'bb': {}}
+    for (src, tgt) in links:
+        sg = 'a' if src < Na else 'b'
+        tg = 'a' if tgt < Na else 'b'
+        tgt_deg = G.degree(tgt)
+        x_i[sg + tg][tgt_deg] = x_i[sg + tg].get(tgt_deg, 0) + 1
+    return x_i
+
+def add_target_counts(n_0, x_i):
+    n_i = copy.deepcopy(n_0)
+
+    for deg, cnt in x_i['aa'].items():
+        n_i['na'][deg] = max([n_i['na'].get(deg, 0) - cnt, 0])
+        n_i['na'][deg+1] = n_i['na'].get(deg+1, 0) + cnt
+    for deg, cnt in x_i['ab'].items():
+        n_i['nb'][deg] = max([n_i['nb'].get(deg, 0) - cnt, 0])
+        n_i['nb'][deg+1] = n_i['nb'].get(deg+1, 0) + cnt
+    for deg, cnt in x_i['bb'].items():
+        n_i['nb'][deg] = max([n_i['nb'].get(deg, 0) - cnt, 0])
+        n_i['nb'][deg+1] = n_i['nb'].get(deg+1, 0) + cnt
+    for deg, cnt in x_i['ba'].items():
+        n_i['na'][deg] = max([n_i['na'].get(deg, 0) - cnt, 0])
+        n_i['na'][deg+1] = n_i['na'].get(deg+1, 0) + cnt
+    tot_deg = sum([sum([cnt for cnt in dc.values()]) for dc in x_i.values()])
+    sg = 'a' if (x_i['aa'] or x_i['ab']) else 'b' if (x_i['bb'] or x_i['ba']) else None
+    if sg:
+        n_i['n'+sg][tot_deg] = n_i['n'+sg].get(tot_deg, 0) + 1
+
+    clean_ni = {'na': {0: 0}, 'nb': {0: 0}}
+    for sg in clean_ni:
+        clean_ni[sg] = {key: val for key, val in n_i[sg].items() if val > 0}
+    return clean_ni
 
 
 def classify_counts(source, targets, G, m):
@@ -343,7 +545,8 @@ def _pick_ba_two_targets(G, source, target_list, dist, m, cval):
     m_ba = m - len(candidates)
     target_prob_dict = {}
     for target in target_list_copy:
-        target_prob =  G.degree(target) + 0.00001
+        tgt_deg = G.degree(target)
+        target_prob =  tgt_deg if tgt_deg > 0 else 0.0001
         target_prob_dict[target] = target_prob
 
     prob_sum = sum(target_prob_dict.values())
@@ -363,6 +566,46 @@ def _pick_ba_two_targets(G, source, target_list, dist, m, cval):
             if rand_num < cumsum:
                 candidates.add(k)
                 break
+    # check all candidates and add them
+    targets = set()
+    for k in candidates:
+        if random.random() < dist[(source, k)]:
+            targets.add(k)
+    return targets
+
+def _pick_ba_two_targets_exact(G, source, target_list, dist, m, cval):
+    """
+    Pick set of new neighbors for node source via second BA model.
+    Here, a candidate is selected with probability proportional to degree, and
+    accepted with probability homophily (or not joined). The process is run m times.
+    -----
+    G: networkx graph
+    source: incoming node for which neighbors are selected
+    target_list: list of possible neighbors
+    dist: dict of homophilies
+    m: number of timess the experiment is run.
+    """
+    target_list_copy = copy.copy(target_list)
+    target_prob_list = []
+    for target in target_list_copy:
+        tgt_deg = G.degree(target)
+        target_prob =  tgt_deg if tgt_deg > 0 else 0.0001
+        target_prob_list.append(target_prob)
+
+
+    if sum(target_prob_list) == 0:
+        return targets
+    candidates = set()
+    for i in range(m):
+        probs = np.array(target_prob_list) / sum(target_prob_list)
+        if random.random() < cval:
+            k = np.random.choice(target_list_copy, p=probs, replace=False)
+        else:
+            k = np.random.choice(target_list_copy, replace=False)
+        candidates.add(k)
+        prob_idx = target_list_copy.index(k)
+        target_list_copy.remove(k)
+        target_prob_list.pop(prob_idx)
     # check all candidates and add them
     targets = set()
     for k in candidates:
@@ -402,8 +645,8 @@ def _accept_edge(startNode, endNode, G, edgelist, Na, bias, remove_neighbor, N_e
 
     if accept:
         if remove_neighbor:
-            remove_random_neighbor(G, startNode)
-            rem_edg = None
+            rem_edg = remove_random_neighbor(G, startNode)
+            #rem_edg = None
         else:
             rem_edg = remove_random_edge(G, edgelist, N_edge)
         if not return_link:
@@ -412,7 +655,8 @@ def _accept_edge(startNode, endNode, G, edgelist, Na, bias, remove_neighbor, N_e
         else:
         #If we return the selected links, we add the removed edge instead of the new one
             G.add_edge(*rem_edg)
-            edgelist.append(rem_edg)
+            if edgelist:
+                edgelist.append(rem_edg)
         return [startNode, endNode], rem_edg
     return [[], []]
 
@@ -420,6 +664,7 @@ def _accept_edge(startNode, endNode, G, edgelist, Na, bias, remove_neighbor, N_e
 def remove_random_neighbor(G, startNode):
     lostNode = np.random.choice(list(G.neighbors(startNode)))
     G.remove_edge(startNode, lostNode)
+    return [startNode, lostNode]
 
 
 def remove_random_edge(G, edgelist, N_edge):
@@ -483,7 +728,7 @@ def measure_core_periph(taa, tbb, a=.01):
 
     return rho_a, rho_b
 
-def run_rewiring(N, fm, c, bias, p0, n_iter, track_steps=500, rewire_type="tc_two", remove_neighbor=True):
+def run_rewiring(N, fm, c, bias, p0, n_iter, track_steps=500, rewire_type="tc_two", remove_neighbor=True, deg_based=False, return_net=False, **kwargs):
     """
     Run the Asikainen model with PA instead of triadic closure
     rewire_type: (str) pa_one, pa_two, tc_one, tc_two, tc_three
@@ -496,22 +741,47 @@ def run_rewiring(N, fm, c, bias, p0, n_iter, track_steps=500, rewire_type="tc_tw
     edgelist = list(G.edges) if not remove_neighbor else []
     N_edge = len(edgelist)
     P = defaultdict(list)
-    for i in range(n_iter):
-        rewire_links(G, N, Na, c, bias, remove_neighbor, edgelist, N_edge)
-        if i % track_steps == 0:
-            p = get_p(G, Na)
-            P['p_aa'].append(p[0])
-            P['p_ab'].append(p[1])
-            P['p_bb'].append(p[2])
-        if i == int(.95 * n_iter):
-            p_95 = get_p(G, Na)
-            t_95 = get_t(p_95)
+    if deg_based is False:
+        for i in range(n_iter):
+            rewire_links(G, N, Na, c, bias, remove_neighbor, edgelist, N_edge)
+            if i % track_steps == 0:
+                p = get_p(G, Na)
+                P['p_aa'].append(p[0])
+                P['p_ab'].append(p[1])
+                P['p_bb'].append(p[2])
+            if i == int(.95 * n_iter):
+                p_95 = get_p(G, Na)
+                t_95 = get_t(p_95)
+        p = get_p(G, Na)
+        t = get_t(p)
+        converg_d = .5 * (np.abs(t[0] - t_95[0]) + np.abs(t[1] - t_95[1]))
+        rho = measure_core_periph(*t)
+        return p, t, P, rho, converg_d
+    else:
+        x = {}
+        n_i = get_ni(G, Na)
+        n = {0: n_i}
+        m_dist = kwargs.get('m_dist', ['poisson', 40])
+        m_vals = [1 for _ in range(n_iter)] #_get_m(m_dist, n_iter, 0)
+        for i, m in enumerate(m_vals):
+            x_i, n_i = rewire_network_stepxstep(G, N, Na, c, bias, m, n_i)
+            x[i] = x_i
+            n[i+1] = n_i
+        if return_net:
+            return G
+        else:
+            return x, n
 
-    p = get_p(G, Na)
-    t = get_t(p)
-    converg_d = .5 * (np.abs(t[0] - t_95[0]) + np.abs(t[1] - t_95[1]))
-    rho = measure_core_periph(*t)
-    return p, t, P, rho, converg_d
+
+def get_ni(G, Na):
+    n_i = {'na': {}, 'nb': {}}
+    for i in range(len(G)):
+        deg = G.degree(i)
+        if i < Na:
+            n_i['na'][deg] = n_i['na'].get(deg, 0) + 1
+        else:
+            n_i['nb'][deg] = n_i['nb'].get(deg, 0) + 1
+    return n_i
 
 
 def run_growing(N, fm, c, bias, p0, n_iter, track_steps=500, rewire_type="ba_two", remove_neighbor=True, m=2, ret_counts=False):
@@ -528,7 +798,7 @@ def run_growing(N, fm, c, bias, p0, n_iter, track_steps=500, rewire_type="ba_two
     grow_links = eval(rewire_type)
     #G, Na = random_network(N, fm, p0)
     h_aa, h_bb = bias
-    G, Na, dist = ba_starter(N, fm, h_aa, h_bb, p0)
+    G, Na, dist = ba_starter(N, fm, h_aa, h_bb)
     sources = list(range(N))
     target_list = list(np.random.choice(sources, m, replace=False))
     counts = []
@@ -554,6 +824,56 @@ def run_growing(N, fm, c, bias, p0, n_iter, track_steps=500, rewire_type="ba_two
     t = get_t(p)
     rho = measure_core_periph(*t)
     return p, t, (P, counts), rho, converg_d
+
+def run_growing_varying_m(N, fm, c, bias, m_dist=['poisson', 40], m0=10, rewire_type="ba_two", ret_counts=False, deg_based=False):
+    """
+    Run a Barabasi-Albert model for growing a network
+    rewire_type: (str) ba_one, ba_two
+    """
+    v_types = ["ba_one", "ba_two", "ba_zero"]
+    assert rewire_type in v_types, "Add valid rewire type"
+    rewire_type = 'grow_' + rewire_type
+    grow_links = eval(rewire_type)
+    h_aa, h_bb = bias
+    G, Na, dist = ba_starter(N, fm, h_aa, h_bb)
+    m_vals = _get_m(m_dist, N, m0)
+    sources = list(range(N))
+    target_list = list(np.random.choice(sources, m0, replace=False))
+    counts = []
+    for tgt in target_list:
+        _ = sources.remove(tgt)
+    Paa = list()
+    Pbb = list()
+    if deg_based is False:
+        for i, m in enumerate(m_vals):
+            p = get_p(G, Na) # At some point this has also been get_p
+            Paa.append(p[0])
+            Pbb.append(p[2])
+            cnt = grow_links(G, sources, target_list, dist, m, c, ret_counts=True)
+            counts.append(cnt)
+        return Paa, Pbb, counts
+    else:
+        x = {}
+        n_i = {'na': {}, 'nb': {}}
+        n = {0: n_i}
+
+        for i, m in enumerate(m_vals):
+            x_i, n_i = grow_links(G, sources, target_list, dist, m, c, n_i=n_i, Na=Na)
+            x[i] = x_i
+            n[i+1] = n_i
+        return x, n
+
+
+def _get_m(m_dist, N, m0):
+    if isinstance(m_dist, (list, np.ndarray)) and len(m_dist) == N-m0:
+        m_vals = m_dist
+    elif m_dist[0] == 'poisson':
+        m_vals = np.random.poisson(m_dist[1], N - m0)
+    cm = []
+    for i, m in enumerate(m_vals):
+        cm.append(min([m, i + m0]))
+
+    return cm
 
 def total_degree(G, Na):
     Ka, Kb = 0, 0
