@@ -104,50 +104,79 @@ def rewire_pa_one(G, N, Na, c, bias, remove_neighbor, edgelist, N_edge, return_l
         return [[], []]
 
 
-def rewire_network_stepxstep(G, N, Na, c, bias, m, n_i):
+def rewire_network_stepxstep(G, N, Na, c, bias, n_i):
     """
     PA one - create new edge by following a link from a random node
     """
-    x_i = {'aa': {}, 'ab': {}, 'ba': {}, 'bb':{}}
-    n_i_ = n_i
-    #SANITY CHECK
-    #tota = sum([k*v for k, v in n_i['na'].items()])
-    #nit = get_ni(G, Na)
-    #tott = sum([k*v for k, v in nit['na'].items()])
-    #if tota != tott:
-    #    import pdb; pdb.set_trace()
-    for _ in range(m):
-        n_link, d_link, ltype, typn, typd = _rewire_candidates_exact(G, N, Na, c, bias)
-        #G_old = G.copy()
-        if d_link and n_link:
-            tgt_deg = G.degree(n_link[1])
-            x_i[ltype][tgt_deg] = x_i[ltype].get(tgt_deg, 0) + 1
-            n_i[typn][tgt_deg+1] = n_i[typn].get(tgt_deg + 1, 0) + 1
-            n_i[typn][tgt_deg] = n_i[typn].get(tgt_deg, 0) - 1 # remove get
+    x_i = {}
+    n_i_ = n_i.copy()
 
-            del_deg = G.degree(d_link[1])
-            n_i[typd][del_deg] = n_i[typd].get(del_deg, 0) - 1 # remove get
-            n_i[typd][del_deg-1] = n_i[typd].get(del_deg - 1, 0) + 1
+    n_link, d_link, ltype, typn, typd = _rewire_candidates_exact(G, N, Na, c, bias)
 
-            n_i_['na'] = {k: v for k, v in n_i['na'].items() if v > 0}
-            n_i_['nb'] = {k: v for k, v in n_i['nb'].items() if v > 0}
+    if d_link and n_link:
+        tgt_deg = G.degree(n_link[1])
+        x_i[ltype] = tgt_deg
+        n_i[typn][tgt_deg+1] = n_i[typn].get(tgt_deg + 1, 0) + 1
+        n_i[typn][tgt_deg] = n_i[typn].get(tgt_deg, 0) - 1 # remove get
 
+        del_deg = G.degree(d_link[1])
+        n_i[typd][del_deg] = n_i[typd].get(del_deg, 0) - 1 # remove get
+        n_i[typd][del_deg-1] = n_i[typd].get(del_deg - 1, 0) + 1
 
-            G.add_edge(*n_link)
-            G.remove_edge(*d_link)
+        n_i_['na'] = {k: v for k, v in n_i['na'].items() if v > 0}
+        n_i_['nb'] = {k: v for k, v in n_i['nb'].items() if v > 0}
 
-
-            #SANITY CHECK - compare n_i with deg dists from G
-            #tota = sum([k*v for k, v in n_i['na'].items()])
-            #totb = sum([k*v for k, v in n_i['nb'].items()])
-            #nit = get_ni(G, Na)
-            #ta = sum([k*v for k, v in nit['na'].items()])
-            #tb = sum([k*v for k, v in nit['nb'].items()])
-            #print('Tota: {} - {}     Totb: {} - {}'.format(tota, ta, totb, tb))
-
+        G.add_edge(*n_link)
+        G.remove_edge(*d_link)
 
     return x_i, n_i_
 
+def rewire_network_light(G, N, Na, c, bias, n_l, n_i):
+    """
+    PA one - create new edge by following a link from a random node
+    """
+    x_i = []
+    n_i_ = n_i.copy() #Degree distribution as in rewire_candidates_exact
+    n_l = n_l.copy() #Minimum sums required for llik
+
+    n_link, d_link, ltype, typn, typd = _rewire_candidates_exact(G, N, Na, c, bias)
+
+    if d_link and n_link:
+        tgt_deg = G.degree(n_link[1])
+        tgt_cnt = n_i[typn][tgt_deg]
+        x_i = [ltype, tgt_deg, tgt_cnt]
+        if typn == 'na':
+            n_l[0] += 1
+        elif typn == 'nb':
+            n_l[1] += 1
+        #n_l['u' + typn[1]] # n_l['u' + ty] doesn't change
+
+        n_i[typn][tgt_deg+1] = n_i[typn].get(tgt_deg + 1, 0) + 1
+        n_i[typn][tgt_deg] = n_i[typn].get(tgt_deg, 0) - 1 # remove get
+
+        del_deg = G.degree(d_link[1])
+        if typd == 'na':
+            n_l[0] -= 1
+        elif typd == 'nb':
+            n_l[1] -= 1
+        #n_l['p' + typd[1]] -= 1
+        if del_deg == 1:
+            #n_l['u' + typd[1]] -= 1
+            if typd == 'na':
+                n_l[2] -= 1
+            elif typd == 'nb':
+                n_l[3] -= 1
+
+        n_i[typd][del_deg] = n_i[typd].get(del_deg, 0) - 1 # remove get
+        n_i[typd][del_deg-1] = n_i[typd].get(del_deg - 1, 0) + 1
+
+        n_i_['na'] = {k: v for k, v in n_i['na'].items() if v > 0}
+        n_i_['nb'] = {k: v for k, v in n_i['nb'].items() if v > 0}
+
+        G.add_edge(*n_link)
+        G.remove_edge(*d_link)
+
+    return x_i, n_l, n_i_
 
 def _rewire_candidates_exact(G, N, Na, c, bias):
     """:
@@ -757,16 +786,34 @@ def run_rewiring(N, fm, c, bias, p0, n_iter, track_steps=500, rewire_type="tc_tw
         converg_d = .5 * (np.abs(t[0] - t_95[0]) + np.abs(t[1] - t_95[1]))
         rho = measure_core_periph(*t)
         return p, t, P, rho, converg_d
-    else:
+    elif deg_based is True:
         x = {}
         n_i = get_ni(G, Na)
         n = {0: n_i}
-        m_dist = kwargs.get('m_dist', ['poisson', 40])
-        m_vals = [1 for _ in range(n_iter)] #_get_m(m_dist, n_iter, 0)
-        for i, m in enumerate(m_vals):
-            x_i, n_i = rewire_network_stepxstep(G, N, Na, c, bias, m, n_i)
-            x[i] = x_i
-            n[i+1] = n_i
+        #m_dist = kwargs.get('m_dist', ['poisson', 40])
+        #m_vals = [1 for _ in range(n_iter)] #_get_m(m_dist, n_iter, 0)
+        i = 0
+        for _ in range(n_iter):
+            x_i, n_i = rewire_network_stepxstep(G, N, Na, c, bias, n_i)
+            if x_i:
+                x[i] = x_i
+                n[i+1] = n_i
+                i += 1
+        if return_net:
+            return G
+        else:
+            return x, n
+    elif deg_based == 'light':
+        x = {}
+        n_l, deg_dist = light_ni(G, Na)
+        n = {0: n_l}
+        i = 0
+        for _ in range(n_iter):
+            x_i, n_l, deg_dist = rewire_network_light(G, N, Na, c, bias, n_l, deg_dist)
+            if x_i:
+                x[i] = x_i
+                n[i+1] = n_l
+                i += 1
         if return_net:
             return G
         else:
@@ -782,6 +829,16 @@ def get_ni(G, Na):
         else:
             n_i['nb'][deg] = n_i['nb'].get(deg, 0) + 1
     return n_i
+
+def light_ni(G, Na):
+    nt = get_ni(G, Na)
+    n_i = [0, 0, 0, 0]
+    n_i[0] = sum([n*k for k, n in nt['na'].items()])
+    n_i[1] = sum([n*k for k, n in nt['nb'].items()])
+    n_i[2] = sum(nt['na'].values())
+    n_i[3] = sum(nt['nb'].values())
+    return n_i, nt
+
 
 
 def run_growing(N, fm, c, bias, p0, n_iter, track_steps=500, rewire_type="ba_two", remove_neighbor=True, m=2, ret_counts=False):

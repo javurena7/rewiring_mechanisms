@@ -4,6 +4,7 @@ sys.path.append('..')
 import asikainen_model as am
 import sympy as sym
 from scipy import optimize
+from scipy.special import expit
 
 def get_dataset(sa, sb, na, c, N, m=10):
     n_iter = 0
@@ -38,6 +39,14 @@ def get_dataset_EM(sa, sb, na, c, N, m=10):
     obs_counts = np.array(counts)[:, [0, 1, 3, 4]]
     return Paa, Pbb, obs_counts, counts
 
+def get_dataset_varm(sa, sb, na, c, N, m_dist=['poisson', 50], m0=10, em=True):
+    Paa, Pbb, counts = am.run_growing_varying_m(N, na, c, [sa, sb], m_dist, m0=m0, ret_counts=True)
+    if em:
+        obs_counts = np.array(counts)[:, [0, 1, 3, 4]]
+        return Paa, Pbb, obs_counts, counts
+    else:
+        return Paa, Pbb, counts
+
 def _lik_catprobs(Paa, Pbb, na, sa, sb, c):
     nb = 1 - na
     Maa = (c/2*(1+Paa-Pbb) + (1-c)*na)*sa
@@ -52,18 +61,19 @@ def _lik_catprobs(Paa, Pbb, na, sa, sb, c):
 
 
 class GrowthFit(object):
-    def __init__(self, Paa, Pbb, counts, na):
+    def __init__(self, Paa, Pbb, counts, na, prior=5):
         self.Paa = Paa
         self.Pbb = Pbb
         self.counts = counts
         self.na = na
+        self.prior = prior #alpha, beta param for a beta distribution of c
 
     def update_counts(self, counts):
         self.counts = counts
 
     def loglik(self, theta):
         sa, sb, c = theta
-        llik = 0 #np.log(theta[2]) + np.log(1-theta[2]) # C prior
+        llik = -self.prior*(np.log(c) + np.log(1-c)) # C prior
         for paa, pbb, cnt, w in zip(self.Paa, self.Pbb, self.counts, self.coefs):
             M = _lik_catprobs(paa, pbb, self.na, sa, sb, c)
             llik -= w*sum([x * np.log(m) for x, m in zip(cnt, M)])
@@ -72,7 +82,7 @@ class GrowthFit(object):
     def grad_loglik(self, theta):
         sa, sb, c = theta
         grd = np.zeros(3)
-        #grd[2] = - (1/theta[2] - 1/(1-theta[2]))
+        grd[2] = -self.prior*(1/theta[2] - 1/(1-theta[2]))
         for paa, pbb, cnt, w in zip(self.Paa, self.Pbb, self.counts, self.coefs):
             grd -= w*grow_gradloglikbase_jointmulti(sa, sb, c, paa, pbb, cnt, self.na)
         return grd
@@ -80,17 +90,21 @@ class GrowthFit(object):
     def hess_loglik(self, theta):
         sa, sb, c = theta
         H = np.zeros((3,3))
-        #H[2, 2] = -(1/theta[2]**2 + 1/(1-theta[2])**2)
+        H[2, 2] = self.prior*(1/theta[2]**2 + 1/(1-theta[2])**2)
         for paa, pbb, cnt, w in zip(self.Paa, self.Pbb, self.counts, self.coefs):
             H -= w*grow_hessloglik_base(sa, sb, c, paa, pbb, cnt, self.na)
         return H
 
     def solve(self, x0=[.5, .5, .5], method='trust-constr'):
-        bounds = optimize.Bounds([0, 0, 0], [1, 1, 1])
+        bounds = optimize.Bounds([.05, 0.05, 0.05], [.95, .95, .95])
         # Check if this makes sense // to weight the likelihood to distinguish c from na
-        coefs = [np.abs(.5*(1-pa+pb)-self.na)**2 for pa, pb in zip(self.Paa, self.Pbb)]
-        coefs = np.array(coefs)/sum(coefs)
-        #coefs = [1 if np.abs(.5*(1-pa+pb)-self.na) < np.random.rand() else 0 for pa, pb in zip(self.Paa, self.Pbb)]
+        #coefs = [1 + np.abs(.5*(1+pa-pb)-self.na)**2 for pa, pb in zip(self.Paa, self.Pbb)]
+        #coefs = len(coefs)*np.array(coefs)/sum(coefs)
+        #coefs = [1 if np.abs(.5*(1+pa-pb)-self.na) > np.random.rand() else 0 for pa, pb in zip(self.Paa, self.Pbb)]
+        #print(sum(coefs)/len(coefs))
+
+        coefs = np.ones(len(self.Paa))
+        #coefs[::5] = 1
         self.coefs = coefs
 
         opt = optimize.minimize(self.loglik, x0, method=method, jac=self.grad_loglik, hess=self.hess_loglik, bounds=bounds)
@@ -100,30 +114,64 @@ class GrowthFit(object):
         opt = None
         fun = np.inf
         for _ in range(n_x0):
-            x0 = np.random.rand(3)
+            x0 = np.random.uniform(.1, .9, 3)
             sol = self.solve(x0, method)
             if sol.fun < fun:
                 fun = sol.fun
-                #print('opt: {}'.format(sol.x))
                 opt = sol
         return opt
 
 class GrowthEM(GrowthFit):
-    def __init__(self, Paa, Pbb, obs_counts, na, em_iter=10):
-        super().__init__(Paa=Paa, Pbb=Pbb, counts=None, na=na)
-        self.em_iter = em_iter
+    def __init__(self, Paa, Pbb, obs_counts, na, prior=5):
+        super().__init__(Paa=Paa, Pbb=Pbb, counts=None, na=na, prior=prior)
         self.obs_counts = obs_counts
 
-    def em(self, tol=.01, theta_0=[.5, .5, .5], n_x0=2):
+    def em(self, tol=.01, theta_0=[.5, .5, .5], n_x0=2, max_iter=40):
         theta_0 = np.array(theta_0)
-        count_dist = self.expected_counts(theta_0)
-        while count_dist > tol:
+        i = 0
+        count_dist = np.inf
+        while (count_dist > tol) and (i < max_iter):
+            count_dist = self.expected_counts(theta_0)
             opt = self.solve_randx0(n_x0=n_x0)
-            sol = opt.x #.5*opt.x + .5*theta_0
-            count_dist = self.expected_counts(sol)
-            print('sol: {} ; dist: {}'.format(sol, count_dist))
-            theta_0 = sol
+            theta_0 = opt.x #.5*opt.x + .5*theta_0
+            #count_dist = self.expected_counts(sol)
+            print('     sol: {} ; dist: {}'.format(theta_0, count_dist))
+            i += 1
+        if i >= max_iter:
+            opt.success = False
         return opt
+
+    def em_twostep(self, tol=.05, theta_0=[.5, .5, .5], max_iter=20):
+        theta_0 = np.array(theta_0)
+        i = 0
+        count_dist = np.inf
+        func = -np.inf
+        while (count_dist > tol) and (i < max_iter):
+            count_dist = self.expected_counts(theta_0)
+            x0 = np.random.uniform(.1, .9, 3)
+            opt = self.solve(x0)
+            theta_0 = opt.x
+            print('     sol: {} ; dist: {}'.format(theta_0, count_dist))
+            i += 1
+            theta_0[2] = self._c_cand(count_dist, theta_0[2])
+        cvals = np.linspace(.1, .9, 9)
+        ss = theta_0[:2]
+        funcs = []
+        for cval in cvals:
+            self.expected_counts([ss[0], ss[1], cval])
+            opt = self.solve(np.random.uniform(.1, .9, 3))
+            self.expected_counts(opt.x)
+            opt = self.solve()
+            funcs.append([opt.fun, opt.x])
+            print('      ---- {}: {}'.format(opt.x, opt.fun))
+        return funcs
+
+    def _c_cand(self, count_dist, ccurr):
+        rs = np.sqrt(expit(count_dist) -.5)
+        cand = np.inf
+        while (cand > 1) or (cand < 0):
+            cand = ccurr + np.random.uniform(-rs, rs)
+        return cand
 
     def expected_counts(self, theta):
         sa, sb, c = theta

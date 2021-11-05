@@ -1,10 +1,11 @@
 import growth_fit as gf
+import growth_degree_fit as gdf
 import matplotlib.pyplot as plt; plt.ion()
 import numpy as np
 import seaborn as sns
 import pandas as pd
 
-def test_growth_fit(N=1000, n_samp=5, clen=10):
+def test_growth_fit(N=1000, n_samp=5, clen=10, em=False, deg_fit=False):
     """
     Plot a function of goodness of fit for a grid of na-sa values, fixed sb  several values of c
     """
@@ -13,28 +14,55 @@ def test_growth_fit(N=1000, n_samp=5, clen=10):
     sas = [1/6, 1/3, 1/2, 2/3, 5/6]
     nas = [1/6, 1/3, 1/2, 2/3, 5/6]
     cvals = np.repeat(np.linspace(.05, .95, clen), n_samp)
+    color = []
     for i, sa in enumerate(sas):
         for j, na in enumerate(nas):
             fits = np.zeros((len(cvals), 3))
+            fits_false = np.zeros((len(cvals), 3))
             print(i, j)
             for k, cval in enumerate(cvals):
-                Paa, Pbb, counts = gf.get_dataset(sa=sa, sb=sb, na=na, c=cval, N=N)
-                optimizer = gf.GrowthFit(Paa=Paa, Pbb=Pbb, counts=counts, na=na)
-                opt = optimizer.solve_randx0(4)
-                print(opt.x)
-                fits[k, :] = opt.x
+                if deg_fit:
+                    figname = 'plots/test_growth_fit_degfull_N{}.pdf'.format(N)
+                    x, n = gdf.am.run_growing_varying_m(N, na, cval, [sa, sb], ['poisson', 30], deg_based=True)
+                    GF = gdf.GrowthFit(x, n, na=na)
+                    GF.solve()
+                    if GF.opt.success:
+                        fits[k, :] = GF.opt.x
+                    #vals = gdf.c_loglik(sa, sb, x, n)
+                    #c = np.argmax(vals)/50
+                    #fits[k, :] = [sa, sb, c]
+                    cest = fits[k, 2]
+                    print(cval, cest)
+                elif em:
+                    figname = 'test_growth_fit_em_varm_N{}.pdf'.format(N)
+                    Paa, Pbb, obs_counts, counts = gf.get_dataset_varm(sa=sa, sb=sb, na=na, c=cval, N=N, em=True)
+                    optimizer = gf.GrowthEM(Paa=Paa, Pbb=Pbb, obs_counts=obs_counts, na=na, prior=1)
+                    theta_0 = np.random.uniform(.1, .9, 3)
+                    opt = optimizer.em(theta_0=theta_0, max_iter=50)
+                    if opt.success:
+                        fits[k, :] = opt.x
+
+                else:
+                    figname = 'test_growth_fit_varm_N{}.pdf'.format(N)
+
+                    Paa, Pbb, counts = gf.get_dataset_varm(sa=sa, sb=sb, na=na, c=cval, N=N, em=False)
+                    optimizer = gf.GrowthFit(Paa=Paa, Pbb=Pbb, counts=counts, na=na)
+                    opt = optimizer.solve_randx0(4)
+                    print(opt.x)
+                    if opt.success:
+                        fits[k, :] = opt.x
             axs[i, j].plot([0, 1], [0, 1], alpha=.5)
             axs[i, j].scatter([sa]*len(fits), fits[:, 0], c='r')
             axs[i, j].scatter([sb]*len(fits), fits[:, 1], c='k')
             axs[i, j].scatter(cvals, fits[:, 2], c='b')
             axs[i, j].set_title('na: {} | sa: {}'.format(round(na, 2), round(sa, 2)))
-            fig.savefig('test_growth_fit_N{}.pdf'.format(N))
+            fig.savefig(figname.format(N))
     fig.tight_layout()
-    fig.savefig('test_growth_fit_N{}.pdf'.format(N))
+    fig.savefig(figname.format(N))
 
 
 
-def test_growth_fit_heatmap(N=1000, n_samp=5):
+def test_growth_fit_heatmap(N=1000, n_samp=5, em=False):
     """
     Plot a function of goodness of fit for a grid of na-cval values, and where each plot contains an error heatmap for values of sa-sb
     """
@@ -64,4 +92,39 @@ def test_growth_fit_heatmap(N=1000, n_samp=5):
     fig.savefig('test_growth_fit_heatmap_N{}.pdf'.format(N))
 
 
+def test_likelihood_c_param(N=1000, n_samp=1000, em=False):
+    """
+    Test wheter similar .5(1+paa-pbb) to na is the reason why c is hard to estimate
+    """
+    # TODO: run test varying m (varm) and with jumping likelihood (jumpllik) for em alg
+    fig, ax = plt.subplots()
+    params = np.random.uniform(.1, .9, (n_samp, 4))
+    errors = []
+    dists = []
+    for i, param in enumerate(params):
+        if i % 1 == 0:
+            print('{}       params={}'.format(i/n_samp, np.round(param[:3], 4)))
+        na = param[3]
+        if (na > .95) or (na < 0.5):
+            na = np.random.uniform(0.05, 0.95)
+        if em:
+            figname = 'likelihood_test_em_varmk.pdf'
+            Paa, Pbb, obs_counts, counts = gf.get_dataset_varm(sa=param[0], sb=param[1], na=na, c=param[2], N=N, em=True)
+            optimizer = gf.GrowthEM(Paa=Paa, Pbb=Pbb, obs_counts=obs_counts, na=na)
+            theta_0 = np.random.uniform(.1, .9, 3)
+            opt = optimizer.em(theta_0=theta_0)
+        else:
+            figname = 'likelihood_test_varm.pdf' #jumping: llik randomly selects
+            Paa, Pbb, counts = gf.get_dataset_varm(sa=param[0], sb=param[1], na=na, c=param[2], N=N, em=False)
+            optimizer = gf.GrowthFit(Paa=Paa, Pbb=Pbb, counts=counts, na=na)
+            opt = optimizer.solve()
+
+        n_dist = [np.abs(.5*(1+pa-pb)-na) for pa, pb in zip(Paa, Pbb)]
+        dists.append(np.mean(n_dist))
+        errors.append(np.abs(opt.x[2]-param[2]))
+        print('dist: {}  --- error: {}'.format(dists[-1], errors[-1]))
+    ax.plot(dists, errors, '.')
+    ax.set_xlabel(r'$D((1/2)*(1+P_{aa}-P_{bb}), n_a)$')
+    ax.set_ylabel(r'D(c, c^*)')
+    fig.savefig(figname)
 

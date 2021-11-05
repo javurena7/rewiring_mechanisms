@@ -10,8 +10,12 @@ from math import factorial
 RewireFit is NOT in working condition for degree-based estimates
 """
 
-def get_dataset(sa, sb, na, c, N, n_iter=1000, fm=.3, m=10, p0=[[.01, .01], [.01, .01]]):
-    x, n = am.run_rewiring(N, fm, c, bias=[sa, sb], p0=p0, n_iter=n_iter, m_dist=['poisson', m], deg_based=True)
+def get_dataset(sa, sb, na, c, N, n_iter=1000, m=10, p0=[[.01, .01], [.01, .01]], light=True):
+    if light:
+        deg_based = 'light'
+    else:
+        deg_based = True
+    x, n = am.run_rewiring(N, na, c, bias=[sa, sb], p0=p0, n_iter=n_iter, m_dist=['poisson', m], deg_based=deg_based)
     return x, n
 
 def get_dataset_varm(sa, sb, na, c, N, m_dist=['poisson', 50], m0=10, em=True):
@@ -23,19 +27,65 @@ def get_dataset_varm(sa, sb, na, c, N, m_dist=['poisson', 50], m0=10, em=True):
         return Paa, Pbb, counts
 
 def _get_h(xt, sa, sb):
-    if (xt.get('aa') or xt.get('ab')):
-        return 'a', sa, (1-sa)
-    elif (xt.get('ba') or xt.get('bb')):
-        return 'b', (1-sb), sb
+    if xt.get('aa'):
+        return 'a', 'a', sa, (1-sa)
+    elif xt.get('ab'):
+        return 'a', 'b',sa, (1-sa)
+    elif xt.get('ba'):
+        return 'b', 'a', (1-sb), sb
+    elif  xt.get('bb'):
+        return 'b', 'b', (1-sb), sb
     else:
-        return '', 0, 0
-
-def _lik_step_t_single(c, sa, sb, nt, xt):
-    typ = xt['c'] #Classification / type of new link
+        return '', '', 0, 0
 
 
+def _get_h_light(xt, sa, sb):
+    if xt[0] == 'aa':
+        return 'a', 'a', sa, (1-sa)
+    elif xt[0] == 'ab':
+        return 'a', 'b',sa, (1-sa)
+    elif xt[0] == 'ba':
+        return 'b', 'a', (1-sb), sb
+    elif xt[0] == 'bb':
+        return 'b', 'b', (1-sb), sb
+    else:
+        return '', '', 0, 0
 
-def _lik_step_t_probs(c, sa, sb, nt, xt, fm):
+
+def _lik_step_t_light(c, sa, sb, nt, xt):
+    src, tgt, ha, hb = _get_h_light(xt, sa, sb)
+    if not src:
+        return 0
+
+    Pa_tot = nt[0] #'pa'] #sum([n*k for k, n in nt['na'].items()])
+    Pb_tot = nt[1] #'pb'] #sum([n*k for k, n in nt['nb'].items()])
+    Ua_tot = nt[2] #'ua'] #sum(nt['na'].values())
+    Ub_tot = nt[3] #'ub'] #sum(nt['nb'].values())
+
+    P_denm = Pa_tot + Pb_tot # Denom of PA kernel
+    U_denm = Ua_tot + Ub_tot # Denom of Unif kernel
+
+    pi_a = ha * (c*Pa_tot/P_denm + (1-c)*Ua_tot/U_denm)
+    pi_b = hb * (c*Pb_tot/P_denm + (1-c)*Ub_tot/U_denm)
+
+    # Step likelihood
+    tgt_deg = xt[1]
+    n_k = xt[2]
+    p_k = c * n_k * tgt_deg / P_denm + (1 - c)* n_k / U_denm
+
+    if tgt == 'a':
+        p_k = ha * p_k
+    else:
+        p_k = hb * p_k
+
+    # Full likelihood
+    llik = np.log(p_k) if p_k > 0 else 0
+    llik += - 1 * np.log(pi_a + pi_b) if pi_a + pi_b > 0 else 0
+
+    return llik
+
+
+def _lik_step_t_probs(c, sa, sb, nt, xt):
     #src, ha, hb = _get_h(xt, sa, sb)
     #if not src:
     #    return 0
@@ -62,7 +112,7 @@ def _lik_step_t_probs(c, sa, sb, nt, xt, fm):
     Pa_tot = 0 #For sum of probs when src is a
     Pb_tot = 0 #For sum of probs when src is b
 
-   #Prob of going from a to a
+    #Prob of going from a to a
     for k, xk in xt['aa'].items():
         na_k = nt['na'].get(k, 0)
         pia_k = c * na_k*k/P_denm if P_denm > 0 else 0
@@ -122,15 +172,15 @@ def _lik_step_t_probs(c, sa, sb, nt, xt, fm):
 
 
 def _gradlik_step_t_probs(c, sa, sb, nt, xt):
-    src, ha, hb = _get_h(xt, sa, sb)
+    src, tgt, ha, hb = _get_h_light(xt, sa, sb)
     if not src:
         return 0
     L = np.zeros(3)
 
-    Pa_tot = sum([n*k for k, n in nt['na'].items()])
-    Pb_tot = sum([n*k for k, n in nt['nb'].items()])
-    Ua_tot = sum(nt['na'].values())
-    Ub_tot = sum(nt['nb'].values())
+    Pa_tot = nt[0] #'pa'] #sum([n*k for k, n in nt['na'].items()])
+    Pb_tot = nt[1] #'pb'] #sum([n*k for k, n in nt['nb'].items()])
+    Ua_tot = nt[2] #'ua'] #sum(nt['na'].values())
+    Ub_tot = nt[3] #'ub'] #sum(nt['nb'].values())
 
     P_denm = Pa_tot + Pb_tot # Denom of PA kernel
     U_denm = Ua_tot + Ub_tot # Denom of Unif kernel
@@ -139,8 +189,8 @@ def _gradlik_step_t_probs(c, sa, sb, nt, xt):
 
     P_tot = c*(Pa_tot*ha + Pb_tot*hb)/P_denm #if P_denm > 0 else 0
     P_tot += (1-c)*(Ua_tot*ha + Ub_tot*hb)/U_denm #if U_denm > 0 else 0
-    x_tota = 1 + sum(xt['aa'].values()) + sum(xt['ab'].values())
-    x_totb = 1 + sum(xt['bb'].values()) + sum(xt['ba'].values())
+    x_tota = 1 if xt[0] in ['aa', 'ab'] else 0
+    x_totb = 1 if xt[0] in ['bb', 'ba'] else 0
 
     #llik = - x_tot * np.log(P_tot) #if P_tot > 0 else 0
     Ub = Ub_tot / U_denm
@@ -152,12 +202,23 @@ def _gradlik_step_t_probs(c, sa, sb, nt, xt):
     DL_dsa_num = c*(Dca - Dcb) + DUa
     DL_dsa = DL_dsa_num / (sa * DL_dsa_num + c*Dcb + Ub)
 
-    L[0] = 1/sa * sum(xt['aa'].values()) - (1/(1-sa))*sum(xt['ab'].values()) - x_tota*DL_dsa
+    #L[0] = 1/sa * xt.get('aa', 0) - (1/(1-sa))*xt.get('ab', 0) - x_tota*DL_dsa
+    L[0] = 0#- x_tota * DL_dsa
+    if xt[0] == 'aa':
+        L[0] += 1 / sa - x_tota * DL_dsa
+    elif xt[0] == 'ab':
+        L[0] += - 1 / (1-sa) - x_tota * DL_dsa
+
     DL_dsb_num = c*(Dcb - Dca) + DUb
     DL_dsb = DL_dsb_num / (sb * DL_dsb_num + c*Dca + Ua)
-    L[1] = 1/sb *sum( xt['bb'].values()) - (1/(1-sb))*sum(xt['ba'].values()) - x_totb*DL_dsb
+    #L[1] = 1/sb * xt.get('bb', 0) - (1/(1-sb))* xt.get('ba', 0) - x_totb*DL_dsb
+    L[1] = 0 #- x_totb * DL_dsb
+    if xt[0] == 'bb':
+        L[1] += 1/sb - x_totb * DL_dsb
+    elif xt[0] == 'ba':
+        L[1] += - 1 / (1 - sb) - x_totb * DL_dsb
 
-    x_tot = 1 + sum(xt[src+'a'].values()) + sum(xt[src+'b'].values())
+    x_tot = 1 #+ xt.get(src+'a', 0) + xt.get(src+'b', 0)
     if src == 'a':
         num = sa*(Dca - Dcb) + Dcb
         den = c * num + sa*DUa + Ub
@@ -165,34 +226,27 @@ def _gradlik_step_t_probs(c, sa, sb, nt, xt):
         num = sb*(Dcb - Dca) + Dca
         den = c * num + sb*DUb + Ua
     L[2] += -x_tot*num/den
-    #Prob of going from src to a
-    for k, xk in xt[src+'a'].items():
-        na_k = nt['na'].get(k, 0)
-        pa_k = na_k*k/P_denm #if k*P_denm > 0 else 0
-        ua_k = na_k / U_denm
-        Dca_k = pa_k - ua_k
-        L[2] += xk * Dca_k / (c*Dca_k + ua_k) if c*Dca_k + ua_k > 0 else 0
 
-    #Prob of going from src to b
-    for k, xk in xt[src+'b'].items():
-        nb_k = nt['nb'].get(k, 0)
-        pb_k = nb_k*k/P_denm #if k*P_denm > 0 else 0
-        ub_k = nb_k / U_denm
-        Dcb_k = pb_k - ub_k
-        L[2] += xk * Dcb_k / (c*Dcb_k + ub_k) if c*Dcb_k + ub_k > 0 else 0
+
+    tgt_deg = xt[1]
+    n_k = xt[2]
+    p_k = n_k * tgt_deg / P_denm
+    u_k = n_k / U_denm
+    Dc_k = p_k - u_k
+    L[2] += Dc_k / (c*Dc_k + u_k) if c*Dc_k + u_k > 0 else 0
 
     return L
 
 def _hesslik_step_t_probs(c, sa, sb, nt, xt):
-    src, ha, hb = _get_h(xt, sa, sb)
+    src, tgt, ha, hb = _get_h_light(xt, sa, sb)
     if not src:
         return 0
     H = np.zeros((3, 3))
 
-    Pa_tot = sum([n*k for k, n in nt['na'].items()])
-    Pb_tot = sum([n*k for k, n in nt['nb'].items()])
-    Ua_tot = sum(nt['na'].values())
-    Ub_tot = sum(nt['nb'].values())
+    Pa_tot = nt[0] #'pa'] #sum([n*k for k, n in nt['na'].items()])
+    Pb_tot = nt[1] #'pb'] #sum([n*k for k, n in nt['nb'].items()])
+    Ua_tot = nt[2] #'ua'] #sum(nt['na'].values())
+    Ub_tot = nt[3] #'ub'] #sum(nt['nb'].values())
 
     P_denm = Pa_tot + Pb_tot # Denom of PA kernel
     U_denm = Ua_tot + Ub_tot # Denom of Unif kernel
@@ -201,8 +255,8 @@ def _hesslik_step_t_probs(c, sa, sb, nt, xt):
 
     P_tot = c*(Pa_tot*ha + Pb_tot*hb)/P_denm #if P_denm > 0 else 0
     P_tot += (1-c)*(Ua_tot*ha + Ub_tot*hb)/U_denm #if U_denm > 0 else 0
-    x_tota = 1 + sum(xt['aa'].values()) + sum(xt['ab'].values())
-    x_totb = 1 + sum(xt['bb'].values()) + sum(xt['ba'].values())
+    x_tota = 1 if xt[0] in ['aa', 'ab'] else 0
+    x_totb = 1 if xt[0] in ['bb', 'ba'] else 0
 
     #llik = - x_tot * np.log(P_tot) #if P_tot > 0 else 0
     Ub = Ub_tot / U_denm
@@ -214,10 +268,20 @@ def _hesslik_step_t_probs(c, sa, sb, nt, xt):
 
     DL_dsa_num = (c*(Dca - Dcb) + DUa)
     DL_dsa = DL_dsa_num**2 / (sa * DL_dsa_num + c*Dcb + Ub)**2
-    H[0, 0] = -1/sa**2 * sum(xt['aa'].values()) - (1/(1-sa)**2)*sum(xt['ab'].values()) + x_tota*DL_dsa
+
+    #H[0, 0] = -1/sa**2 * sum(xt['aa'].values()) - (1/(1-sa)**2)*sum(xt['ab'].values()) + x_tota*DL_dsa
+    if xt[0] == 'aa':
+        H[0, 0] = - (1 / sa)**2 - x_tota * DL_dsa
+    elif xt[0] == 'ab':
+        H[0, 0] = - (1 /(1-sa))**2 - x_tota * DL_dsa
     DL_dsb_num = c*(Dcb - Dca) + DUb
     DL_dsb = DL_dsb_num**2 / (sb * DL_dsb_num + c*Dca + Ua)**2
-    H[1, 1] = 1/sb * sum(xt['bb'].values()) - (1/(1-sb))*sum(xt['ba'].values()) - x_totb*DL_dsb
+
+    #H[1, 1] = 1/sb * sum(xt['bb'].values()) - (1/(1-sb))*sum(xt['ba'].values()) - x_totb*DL_dsb
+    if xt[0] == 'bb':
+       H[1, 1] = -(1/sb)**2 - x_totb * DL_dsb
+    elif xt[0] == 'ba':
+       H[1, 1] = -(1/(1-sb))**2 - x_totb * DL_dsb
 
     H[0, 2] = ((Dca-Dcb)*Ub - Dcb*DUa) / (c*(Dcb +sa*(Dca-Dcb))+sa*DUa+Ub)**2
     H[2, 0] = H[0, 2]
@@ -225,7 +289,7 @@ def _hesslik_step_t_probs(c, sa, sb, nt, xt):
     H[1, 2] = ((Dcb-Dca)*Ua - Dca*DUb) / (c*(Dca +sb*(Dcb-Dca))+sb*DUb+Ua)**2
     H[2, 1] = H[1, 2]
 
-    x_tot = 1 + sum(xt[src+'a'].values()) + sum(xt[src+'b'].values())
+    x_tot = 1 #1 + sum(xt[src+'a'].values()) + sum(xt[src+'b'].values())
     if src == 'a':
         num = sa*(Dca - Dcb) + Dcb
         den = c * num + sa*DUa + Ub
@@ -233,21 +297,13 @@ def _hesslik_step_t_probs(c, sa, sb, nt, xt):
         num = sb*(Dcb - Dca) + Dca
         den = c * num + sb*DUb + Ua
     H[2, 2] += x_tot*(num**2)/den**2
-    #Prob of going from src to a
-    for k, xk in xt[src+'a'].items():
-        na_k = nt['na'].get(k, 0)
-        pa_k = na_k*k/P_denm #if k*P_denm > 0 else 0
-        ua_k = na_k / U_denm
-        Dca_k = pa_k - ua_k
-        H[2, 2] -= xk * (Dca_k / (c*Dca_k + ua_k))**2 if c*Dca_k + ua_k > 0 else 0
 
-    #Prob of going from src to b
-    for k, xk in xt[src+'b'].items():
-        nb_k = nt['nb'].get(k, 0)
-        pb_k = nb_k*k/P_denm #if k*P_denm > 0 else 0
-        ub_k = nb_k / U_denm
-        Dcb_k = pb_k - ub_k
-        H[2, 2] -= xk * (Dcb_k / (c*Dcb_k + ub_k))**2 if c*Dcb_k + ub_k > 0 else 0
+    tgt_deg = xt[1]
+    n_k = xt[2]
+    p_k = n_k * tgt_deg / P_denm
+    u_k = n_k / U_denm
+    Dc_k = p_k - u_k
+    H[2, 2] -= Dc_k / (c*Dc_k + u_k)**2 if c*Dc_k + u_k > 0 else 0
 
     return H
 
@@ -258,14 +314,6 @@ def c_loglik(sa, sb, x, n):
 def sa_loglik(c, sb, x, n):
     vals = [loglik(c, sa, sb, x, n) for sa in np.linspace(0, 1, 50)]
     return vals
-
-
-def _counts_to_coefs(cnt):
-    x1, x2, x4, x5 = cnt
-    x3 = x1 + x2 + 1
-    x6 = x4 + x5 + 1
-    coefs = [x1, x2, -x3, x4, x5, -x6]
-    return coefs
 
 
 class RewireFit(object):
@@ -282,8 +330,8 @@ class RewireFit(object):
         sa, sb, c = theta
         llik = 0
         for (t, xt), nt in zip(self.x_evol.items(), self.n_evol.values()):
-            if t > 1 and (xt['aa'] or xt['ab'] or xt['bb'] or xt['ba']):
-                llik += _lik_step_t_probs(c, sa, sb, nt, xt, self.na)
+            if t > 1: # and (xt['aa'] or xt['ab'] or xt['bb'] or xt['ba']):
+                llik -= _lik_step_t_light(c, sa, sb, nt, xt)
         return llik
 
     def grad_loglik(self, theta): #c, sa, sb, x, n):
