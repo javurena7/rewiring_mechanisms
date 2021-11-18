@@ -35,61 +35,76 @@ def _lik_catprobs(Paa, Pbb, na, sa, sb, c):
 
     return [Maa, Mab, Man, Mba, Mbb, Mbn]
 
-def _get_h(xt, sa, sb):
-    if (xt.get('aa') or xt.get('ab')):
+def _get_h_light(xt, sa, sb):
+
+    try:
+        fsrc = xt[0][0]
+    except IndexError:
+        fsrc = ''
+
+
+    if fsrc in ['aa', 'ab']:
         return 'a', sa, (1-sa)
-    elif (xt.get('ba') or xt.get('bb')):
+    elif fsrc in ['ba', 'bb']:
         return 'b', (1-sb), sb
     else:
         return '', 0, 0
 
 
 def _lik_step_t_probs(c, sa, sb, nt, xt):
-    src, ha, hb = _get_h(xt, sa, sb)
+    src, ha, hb = _get_h_light(xt, sa, sb)
     if not src:
         return 0
-    Pa_tot = sum([n*k for k, n in nt['na'].items()])
-    Pb_tot = sum([n*k for k, n in nt['nb'].items()])
-    Ua_tot = sum(nt['na'].values())
-    Ub_tot = sum(nt['nb'].values())
+    #x_i = [linktype, tgtdeg, n_k, x_k(times deg k was selected)]
+    Pa_tot = nt[0]
+    Pb_tot = nt[1]
+    Ua_tot = nt[2]
+    Ub_tot = nt[3]
 
     P_denm = Pa_tot + Pb_tot # Denom of PA kernel
     U_denm = Ua_tot + Ub_tot # Denom of Unif kernel
 
     # For log(sum(pia_j + pib_j))
+    pi_a = ha * (c*Pa_tot/P_denm + (1-c)*Ua_tot/U_denm)
+    pi_b = hb * (c*Pb_tot/P_denm + (1-c)*Ub_tot/U_denm)
 
-    P_tot = c*(Pa_tot*ha + Pb_tot*hb)/P_denm #if P_denm > 0 else 0
-    P_tot += (1-c)*(Ua_tot*ha + Ub_tot*hb)/U_denm #if U_denm > 0 else 0
-    x_tot = 1 + sum(xt[src+'a'].values()) + sum(xt[src+'b'].values())
+    P_tot = pi_a + pi_b
+    x_tot = 1 + sum([x[3] for x in xt])
 
     llik = - x_tot * np.log(P_tot) #if P_tot > 0 else 0
 
-    #Prob of going from src to a
-    for k, xk in xt[src+'a'].items():
-        na_k = nt['na'].get(k, 0)
-        pia_k = c * na_k*k/P_denm #if k*P_denm > 0 else 0
-        pia_k += (1-c)*(na_k/U_denm) #if U_denm > 0 else 0
-        llik += xk * (np.log(pia_k) + np.log(ha)) if pia_k > 0 else xk*np.log(ha)
+    for x in xt:
+        tgt_deg = x[1]
+        n_k = x[2]
+        p_k = c * n_k * tgt_deg / P_denm + (1-c) * n_k / U_denm
+
+        tgt = x[0][1]
+        p_k *= ha if tgt == 'a' else hb
+
+        x_k = x[3]
+        llik += x_k * np.log(p_k) if p_k > 0 else 0
+
+    return llik
 
     #Prob of going from src to b
-    for k, xk in xt[src+'b'].items():
-        nb_k = nt['nb'].get(k, 0)
-        pib_k = c * nb_k*k/P_denm #if k*P_denm > 0 else 0
-        pib_k += (1-c)*(nb_k/U_denm) #if U_denm > 0 else 0
-        llik += xk * (np.log(pib_k) + np.log(hb)) if pib_k > 0 else xk*np.log(hb)
-    return llik
+    #for k, xk in xt[src+'b'].items():
+    #    nb_k = nt['nb'].get(k, 0)
+    #    pib_k = c * nb_k*k/P_denm #if k*P_denm > 0 else 0
+    #    pib_k += (1-c)*(nb_k/U_denm) #if U_denm > 0 else 0
+    #    llik += xk * (np.log(pib_k) + np.log(hb)) if pib_k > 0 else xk*np.log(hb)
 
 
 def _gradlik_step_t_probs(c, sa, sb, nt, xt):
-    src, ha, hb = _get_h(xt, sa, sb)
+    src, ha, hb = _get_h_light(xt, sa, sb)
     if not src:
         return 0
     L = np.zeros(3)
 
-    Pa_tot = sum([n*k for k, n in nt['na'].items()])
-    Pb_tot = sum([n*k for k, n in nt['nb'].items()])
-    Ua_tot = sum(nt['na'].values())
-    Ub_tot = sum(nt['nb'].values())
+    #x_i = [linktype, tgtdeg, n_k, x_k(times deg k was selected)]
+    Pa_tot = nt[0]
+    Pb_tot = nt[1]
+    Ua_tot = nt[2]
+    Ub_tot = nt[3]
 
     P_denm = Pa_tot + Pb_tot # Denom of PA kernel
     U_denm = Ua_tot + Ub_tot # Denom of Unif kernel
@@ -98,8 +113,8 @@ def _gradlik_step_t_probs(c, sa, sb, nt, xt):
 
     P_tot = c*(Pa_tot*ha + Pb_tot*hb)/P_denm #if P_denm > 0 else 0
     P_tot += (1-c)*(Ua_tot*ha + Ub_tot*hb)/U_denm #if U_denm > 0 else 0
-    x_tota = 1 + sum(xt['aa'].values()) + sum(xt['ab'].values())
-    x_totb = 1 + sum(xt['bb'].values()) + sum(xt['ba'].values())
+    x_tota = 1 + sum([x[3] for x in xt if x[0][0]=='a'])
+    x_totb = 1 + sum([x[3] for x in xt if x[0][0]=='b'])
 
     #llik = - x_tot * np.log(P_tot) #if P_tot > 0 else 0
     Ub = Ub_tot / U_denm
@@ -111,12 +126,12 @@ def _gradlik_step_t_probs(c, sa, sb, nt, xt):
     DL_dsa_num = c*(Dca - Dcb) + DUa
     DL_dsa = DL_dsa_num / (sa * DL_dsa_num + c*Dcb + Ub)
 
-    L[0] = 1/sa * sum(xt['aa'].values()) - (1/(1-sa))*sum(xt['ab'].values()) - x_tota*DL_dsa
+    L[0] = 1/sa * sum([x[3] for x in xt if x[0]=='aa']) - (1/(1-sa))*sum([x[3] for x in xt if x[0]=='ab']) - x_tota*DL_dsa
     DL_dsb_num = c*(Dcb - Dca) + DUb
     DL_dsb = DL_dsb_num / (sb * DL_dsb_num + c*Dca + Ua)
-    L[1] = 1/sb *sum( xt['bb'].values()) - (1/(1-sb))*sum(xt['ba'].values()) - x_totb*DL_dsb
+    L[1] = 1/sb *sum([x[3] for x in xt if x[0]=='bb']) - (1/(1-sb))*sum([x[3] for x in xt if x[0]=='ba']) - x_totb*DL_dsb
 
-    x_tot = 1 + sum(xt[src+'a'].values()) + sum(xt[src+'b'].values())
+    x_tot = x_tota + x_totb - 1
     if src == 'a':
         num = sa*(Dca - Dcb) + Dcb
         den = c * num + sa*DUa + Ub
@@ -124,34 +139,38 @@ def _gradlik_step_t_probs(c, sa, sb, nt, xt):
         num = sb*(Dcb - Dca) + Dca
         den = c * num + sb*DUb + Ua
     L[2] += -x_tot*num/den
-    #Prob of going from src to a
-    for k, xk in xt[src+'a'].items():
-        na_k = nt['na'].get(k, 0)
-        pa_k = na_k*k/P_denm #if k*P_denm > 0 else 0
-        ua_k = na_k / U_denm
-        Dca_k = pa_k - ua_k
-        L[2] += xk * Dca_k / (c*Dca_k + ua_k) if c*Dca_k + ua_k > 0 else 0
 
-    #Prob of going from src to b
-    for k, xk in xt[src+'b'].items():
-        nb_k = nt['nb'].get(k, 0)
-        pb_k = nb_k*k/P_denm #if k*P_denm > 0 else 0
-        ub_k = nb_k / U_denm
-        Dcb_k = pb_k - ub_k
-        L[2] += xk * Dcb_k / (c*Dcb_k + ub_k) if c*Dcb_k + ub_k > 0 else 0
+    for x in xt:
+        tgt_deg = x[1]
+        xk = x[3]
+        n_k = x[2]
+        p_k = n_k * tgt_deg / P_denm
+        u_k = n_k / U_denm
+
+        Dc_k = p_k - u_k
+        L[2] += xk * Dc_k / (c*Dc_k + u_k) if c*Dc_k + u_k != 0 else 0
 
     return L
 
+    #Prob of going from src to b
+    #for k, xk in xt[src+'b'].items():
+    #    nb_k = nt['nb'].get(k, 0)
+    #    pb_k = nb_k*k/P_denm #if k*P_denm > 0 else 0
+    #    ub_k = nb_k / U_denm
+    #    Dcb_k = pb_k - ub_k
+    #    L[2] += xk * Dcb_k / (c*Dcb_k + ub_k) if c*Dcb_k + ub_k > 0 else 0
+
+
 def _hesslik_step_t_probs(c, sa, sb, nt, xt):
-    src, ha, hb = _get_h(xt, sa, sb)
+    src, ha, hb = _get_h_light(xt, sa, sb)
     if not src:
         return 0
     H = np.zeros((3, 3))
 
-    Pa_tot = sum([n*k for k, n in nt['na'].items()])
-    Pb_tot = sum([n*k for k, n in nt['nb'].items()])
-    Ua_tot = sum(nt['na'].values())
-    Ub_tot = sum(nt['nb'].values())
+    Pa_tot = nt[0]
+    Pb_tot = nt[1]
+    Ua_tot = nt[2]
+    Ub_tot = nt[3]
 
     P_denm = Pa_tot + Pb_tot # Denom of PA kernel
     U_denm = Ua_tot + Ub_tot # Denom of Unif kernel
@@ -160,8 +179,8 @@ def _hesslik_step_t_probs(c, sa, sb, nt, xt):
 
     P_tot = c*(Pa_tot*ha + Pb_tot*hb)/P_denm #if P_denm > 0 else 0
     P_tot += (1-c)*(Ua_tot*ha + Ub_tot*hb)/U_denm #if U_denm > 0 else 0
-    x_tota = 1 + sum(xt['aa'].values()) + sum(xt['ab'].values())
-    x_totb = 1 + sum(xt['bb'].values()) + sum(xt['ba'].values())
+    x_tota = 1 + sum([x[3] for x in xt if x[0][0]=='a'])
+    x_totb = 1 + sum([x[3] for x in xt if x[0][0]=='b'])
 
     #llik = - x_tot * np.log(P_tot) #if P_tot > 0 else 0
     Ub = Ub_tot / U_denm
@@ -173,10 +192,10 @@ def _hesslik_step_t_probs(c, sa, sb, nt, xt):
 
     DL_dsa_num = (c*(Dca - Dcb) + DUa)
     DL_dsa = DL_dsa_num**2 / (sa * DL_dsa_num + c*Dcb + Ub)**2
-    H[0, 0] = -1/sa**2 * sum(xt['aa'].values()) - (1/(1-sa)**2)*sum(xt['ab'].values()) + x_tota*DL_dsa
+    H[0, 0] = -1/sa**2 * sum([x[3] for x in xt if x[0]=='aa']) - (1/(1-sa)**2)*sum([x[3] for x in xt if x[0]=='ab']) + x_tota*DL_dsa
     DL_dsb_num = c*(Dcb - Dca) + DUb
     DL_dsb = DL_dsb_num**2 / (sb * DL_dsb_num + c*Dca + Ua)**2
-    H[1, 1] = 1/sb * sum(xt['bb'].values()) - (1/(1-sb))*sum(xt['ba'].values()) - x_totb*DL_dsb
+    H[1, 1] = 1/sb * sum([x[3] for x in xt if x[0]=='bb']) - (1/(1-sb))*sum([x[3] for x in xt if x[0]=='ba']) - x_totb*DL_dsb
 
     H[0, 2] = ((Dca-Dcb)*Ub - Dcb*DUa) / (c*(Dcb +sa*(Dca-Dcb))+sa*DUa+Ub)**2
     H[2, 0] = H[0, 2]
@@ -184,7 +203,7 @@ def _hesslik_step_t_probs(c, sa, sb, nt, xt):
     H[1, 2] = ((Dcb-Dca)*Ua - Dca*DUb) / (c*(Dca +sb*(Dcb-Dca))+sb*DUb+Ua)**2
     H[2, 1] = H[1, 2]
 
-    x_tot = 1 + sum(xt[src+'a'].values()) + sum(xt[src+'b'].values())
+    x_tot = x_tota + x_totb - 1
     if src == 'a':
         num = sa*(Dca - Dcb) + Dcb
         den = c * num + sa*DUa + Ub
@@ -192,21 +211,25 @@ def _hesslik_step_t_probs(c, sa, sb, nt, xt):
         num = sb*(Dcb - Dca) + Dca
         den = c * num + sb*DUb + Ua
     H[2, 2] += x_tot*(num**2)/den**2
-    #Prob of going from src to a
-    for k, xk in xt[src+'a'].items():
-        na_k = nt['na'].get(k, 0)
-        pa_k = na_k*k/P_denm #if k*P_denm > 0 else 0
-        ua_k = na_k / U_denm
-        Dca_k = pa_k - ua_k
-        H[2, 2] -= xk * (Dca_k / (c*Dca_k + ua_k))**2 if c*Dca_k + ua_k > 0 else 0
+
+    for x in xt:
+        tgt_deg = x[1]
+        xk = x[3]
+        n_k = x[2]
+
+        p_k = n_k * tgt_deg / P_denm
+        u_k = n_k / U_denm
+
+        Dc_k = p_k - u_k
+        H[2, 2] -= xk * (Dc_k / (c*Dc_k + u_k))**2 if c*Dc_k + u_k != 0 else 0
 
     #Prob of going from src to b
-    for k, xk in xt[src+'b'].items():
-        nb_k = nt['nb'].get(k, 0)
-        pb_k = nb_k*k/P_denm #if k*P_denm > 0 else 0
-        ub_k = nb_k / U_denm
-        Dcb_k = pb_k - ub_k
-        H[2, 2] -= xk * (Dcb_k / (c*Dcb_k + ub_k))**2 if c*Dcb_k + ub_k > 0 else 0
+    #for k, xk in xt[src+'b'].items():
+    #    nb_k = nt['nb'].get(k, 0)
+    #    pb_k = nb_k*k/P_denm #if k*P_denm > 0 else 0
+    #    ub_k = nb_k / U_denm
+    #    Dcb_k = pb_k - ub_k
+    #    H[2, 2] -= xk * (Dcb_k / (c*Dcb_k + ub_k))**2 if c*Dcb_k + ub_k > 0 else 0
 
     return H
 

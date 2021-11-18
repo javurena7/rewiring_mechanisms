@@ -149,7 +149,6 @@ def rewire_network_light(G, N, Na, c, bias, n_l, n_i):
             n_l[0] += 1
         elif typn == 'nb':
             n_l[1] += 1
-        #n_l['u' + typn[1]] # n_l['u' + ty] doesn't change
 
         n_i[typn][tgt_deg+1] = n_i[typn].get(tgt_deg + 1, 0) + 1
         n_i[typn][tgt_deg] = n_i[typn].get(tgt_deg, 0) - 1 # remove get
@@ -177,6 +176,52 @@ def rewire_network_light(G, N, Na, c, bias, n_l, n_i):
         G.remove_edge(*d_link)
 
     return x_i, n_l, n_i_
+
+
+def rewire_network_light(G, N, Na, c, bias, n_l, n_i):
+    """
+    PA one - create new edge by following a link from a random node
+    """
+    x_i = []
+    n_i_ = n_i.copy() #Degree distribution as in rewire_candidates_exact
+    n_l = n_l.copy() #Minimum sums required for llik
+
+    n_link, d_link, ltype, typn, typd = _rewire_candidates_exact(G, N, Na, c, bias)
+
+    if d_link and n_link:
+        tgt_deg = G.degree(n_link[1])
+        tgt_cnt = n_i[typn][tgt_deg]
+        x_i = [ltype, tgt_deg, tgt_cnt]
+        if typn == 'na':
+            n_l[0] += 1
+        elif typn == 'nb':
+            n_l[1] += 1
+
+        n_i[typn][tgt_deg+1] = n_i[typn].get(tgt_deg + 1, 0) + 1
+        n_i[typn][tgt_deg] = n_i[typn].get(tgt_deg, 0) - 1 # remove get
+
+        del_deg = G.degree(d_link[1])
+        if typd == 'na':
+            n_l[0] -= 1
+        elif typd == 'nb':
+            n_l[1] -= 1
+        #n_l['p' + typd[1]] -= 1
+        if del_deg == 1:
+            #n_l['u' + typd[1]] -= 1
+            if typd == 'na':
+                n_l[2] -= 1
+            elif typd == 'nb':
+                n_l[3] -= 1
+
+        n_i[typd][del_deg] = n_i[typd].get(del_deg, 0) - 1 # remove get
+        n_i[typd][del_deg-1] = n_i[typd].get(del_deg - 1, 0) + 1
+
+        n_i_['na'] = {k: v for k, v in n_i['na'].items() if v > 0}
+        n_i_['nb'] = {k: v for k, v in n_i['nb'].items() if v > 0}
+
+        G.add_edge(*n_link)
+        G.remove_edge(*d_link)
+
 
 def _rewire_candidates_exact(G, N, Na, c, bias):
     """:
@@ -408,7 +453,7 @@ def grow_ba_two(G, sources, target_list, dist, m, cval, ret_counts=False, n_i={}
     if ret_counts:
         counts = classify_counts(source, targets, G, m)
     if n_i:
-        x_i = classify_targets(G, source, targets, Na)
+        x_i = classify_targets(G, source, targets, Na, n_i)
         n_i = add_target_counts(n_i, x_i) #Note, this is actually n[i+1]
     if targets != set():
         G.add_edges_from(zip([source] * len(targets), targets))
@@ -423,17 +468,22 @@ def grow_ba_two(G, sources, target_list, dist, m, cval, ret_counts=False, n_i={}
     if n_i:
         return x_i, n_i
 
-def classify_targets(G, source, targets, Na):
+def classify_targets(G, source, targets, Na, n_i):
     """
-    for each dict of counts of new edges (aa, ab, bb, ba), each
-        entry is of the formart deg: count (so count new edges of degree deg)
+    TODO: check that this works
     """
-    x_i = {'aa': {}, 'ab': {}, 'ba': {}, 'bb': {}}
     sg = 'a' if source < Na else 'b'
+    x_h = {sg + 'a': {}, sg + 'b': {}}
     for tgt in targets:
         tg = 'a' if tgt < Na else 'b'
         tgt_deg = G.degree(tgt)
-        x_i[sg + tg][tgt_deg] = x_i[sg + tg].get(tgt_deg, 0) + 1
+        x_h[sg + tg][tgt_deg] = x_h[sg + tg].get(tgt_deg, 0) + 1
+    x_i = []
+    for ltype, cnts in x_h.items():
+        for tgt_deg, xk in cnts.items():
+            n_k = n_i['n'+ltype[1]].get(tgt_deg, 0)
+            xt = [ltype, tgt_deg, n_k, xk]
+            x_i.append(xt)
     return x_i
 
 def classify_rewired_links(G, links, Na):
@@ -450,26 +500,42 @@ def classify_rewired_links(G, links, Na):
     return x_i
 
 def add_target_counts(n_0, x_i):
+    #TODO modify this function to the new format
     n_i = copy.deepcopy(n_0)
 
-    for deg, cnt in x_i['aa'].items():
-        n_i['na'][deg] = max([n_i['na'].get(deg, 0) - cnt, 0])
-        n_i['na'][deg+1] = n_i['na'].get(deg+1, 0) + cnt
-    for deg, cnt in x_i['ab'].items():
-        n_i['nb'][deg] = max([n_i['nb'].get(deg, 0) - cnt, 0])
-        n_i['nb'][deg+1] = n_i['nb'].get(deg+1, 0) + cnt
-    for deg, cnt in x_i['bb'].items():
-        n_i['nb'][deg] = max([n_i['nb'].get(deg, 0) - cnt, 0])
-        n_i['nb'][deg+1] = n_i['nb'].get(deg+1, 0) + cnt
-    for deg, cnt in x_i['ba'].items():
-        n_i['na'][deg] = max([n_i['na'].get(deg, 0) - cnt, 0])
-        n_i['na'][deg+1] = n_i['na'].get(deg+1, 0) + cnt
-    tot_deg = sum([sum([cnt for cnt in dc.values()]) for dc in x_i.values()])
-    sg = 'a' if (x_i['aa'] or x_i['ab']) else 'b' if (x_i['bb'] or x_i['ba']) else None
+    for x in x_i:
+        deg = x[1]
+        cnt = x[3]
+        tgt = x[0][1]
+        nidx = 'n' + tgt
+
+        n_i[nidx][deg] = max([n_i[nidx].get(deg, 0) - cnt, 0])
+        n_i[nidx][deg+1] = n_i[nidx].get(deg+1, 0) + cnt
+
+    #for deg, cnt in x_i['aa'].items():
+    #    n_i['na'][deg] = max([n_i['na'].get(deg, 0) - cnt, 0])
+    #    n_i['na'][deg+1] = n_i['na'].get(deg+1, 0) + cnt
+    #for deg, cnt in x_i['ab'].items():
+    #    n_i['nb'][deg] = max([n_i['nb'].get(deg, 0) - cnt, 0])
+    #    n_i['nb'][deg+1] = n_i['nb'].get(deg+1, 0) + cnt
+    #for deg, cnt in x_i['bb'].items():
+    #    n_i['nb'][deg] = max([n_i['nb'].get(deg, 0) - cnt, 0])
+    #    n_i['nb'][deg+1] = n_i['nb'].get(deg+1, 0) + cnt
+    #for deg, cnt in x_i['ba'].items():
+    #    n_i['na'][deg] = max([n_i['na'].get(deg, 0) - cnt, 0])
+    #    n_i['na'][deg+1] = n_i['na'].get(deg+1, 0) + cnt
+
+    #tot_deg = sum([sum([cnt for cnt in dc.values()]) for dc in x_i.values()])
+    tot_deg = sum([x[3] for x in x_i])
+    try:
+        sg = x_i[0][0][0]
+    except IndexError:
+        sg = None
+    #sg = 'a' if x_i[0][0]if (x_i['aa'] or x_i['ab']) else 'b' if (x_i['bb'] or x_i['ba']) else None
     if sg:
         n_i['n'+sg][tot_deg] = n_i['n'+sg].get(tot_deg, 0) + 1
 
-    clean_ni = {'na': {0: 0}, 'nb': {0: 0}}
+    clean_ni = {'na': {}, 'nb': {}}
     for sg in clean_ni:
         clean_ni[sg] = {key: val for key, val in n_i[sg].items() if val > 0}
     return clean_ni
@@ -903,7 +969,7 @@ def run_growing_varying_m(N, fm, c, bias, m_dist=['poisson', 40], m0=10, rewire_
     Pbb = list()
     if deg_based is False:
         for i, m in enumerate(m_vals):
-            p = get_p(G, Na) # At some point this has also been get_p
+            p = get_p(G, Na)
             Paa.append(p[0])
             Pbb.append(p[2])
             cnt = grow_links(G, sources, target_list, dist, m, c, ret_counts=True)
@@ -911,14 +977,23 @@ def run_growing_varying_m(N, fm, c, bias, m_dist=['poisson', 40], m0=10, rewire_
         return Paa, Pbb, counts
     else:
         x = {}
-        n_i = {'na': {}, 'nb': {}}
-        n = {0: n_i}
+        na_src = len([tgt for tgt in target_list if tgt < Na])
+        n_i = {'na': {0: na_src}, 'nb': {0: len(target_list)-na_src}}
+        n = {0: deg_dist_to_n_light(n_i)}
 
         for i, m in enumerate(m_vals):
             x_i, n_i = grow_links(G, sources, target_list, dist, m, c, n_i=n_i, Na=Na)
             x[i] = x_i
-            n[i+1] = n_i
+            n[i+1] = deg_dist_to_n_light(n_i)
         return x, n
+
+def deg_dist_to_n_light(n_i):
+    pa = sum([x*k for k, x in n_i['na'].items()])
+    pb = sum([x*k for k, x in n_i['nb'].items()])
+    ua = sum(n_i['na'].values())
+    ub = sum(n_i['nb'].values())
+
+    return [pa, pb, ua, ub]
 
 
 def _get_m(m_dist, N, m0):

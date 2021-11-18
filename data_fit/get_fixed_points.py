@@ -1,7 +1,12 @@
 import sympy as sm
+from scipy.integrate import odeint
+import numpy as np
+import sys
+sys.path.append('..')
+import networkx as nx
+import asikainen_model as am
 
-
-def fixed_points(c, na, sa, sb):
+def rewire_fixed_points(c, na, sa, sb):
     paa, pbb = sm.symbols('paa, pbb', negative=False)
 
     maa = (c*.5*(paa + 1 - pbb) + (1-c)*na)*sa
@@ -23,6 +28,104 @@ def fixed_points(c, na, sa, sb):
     equilibria = p_to_t(equilibria)
 
     return equilibria
+
+def rewire_path(c, na, sa, sb, P, t):
+
+    paa, pbb = P #p_from_G(G0, Na)
+    y0 = np.array([paa, pbb])
+
+    def rewire_model(y, t):
+        paa, pbb = y
+        maa = (c*.5*(paa + 1 - pbb) + (1-c)*na)*sa
+        mab = (c*.5*(pbb + 1 - paa) + (1-c)*(1-na))*(1-sa)
+        mba = (c*.5*(paa + 1 - pbb) + (1-c)*na)*(1-sb)
+        mbb = (c*.5*(pbb + 1 - paa) + (1-c)*(1-na))*sb
+
+        taa = 2*paa / (paa + 1 - pbb)
+        tbb =  2*pbb / (pbb + 1 - paa)
+
+        dPaa = na*maa - na*taa*(maa + mab)
+        dPbb = (1-na)*mbb - (1-na)*tbb*(mba + mbb)
+
+        return np.array([dPaa, dPbb])
+
+    ysol = odeint(rewire_model, y0, t)
+    return ysol
+
+def rewire_simul_simple(c, na, sa, sb, P, t, N, L):
+    paa, pbb = P
+    Na = int(na*N)
+    Nb = int((1-na)*N)
+    N = Na + Nb
+    Laa = L*paa
+    Lbb = L*pbb
+    Lab = L - Laa - Lbb
+    p_sbm = [[2*Laa/(Na*(Na-1)), Lab/(Na*Nb)], [Lab/(Na*Nb), 2*Lbb/(Nb*(Nb-1))]]
+    sizes = [Na, Nb]
+    G = nx.stochastic_block_model(sizes=sizes, p=p_sbm)
+    p_simul = p_from_G(G, Na)
+    print(f'p orig: {P}')
+    print(f'p simul: {p_simul}')
+    i = 0
+    while i < 2*t:
+        n_link, d_link, _, _, _ = am._rewire_candidates_exact(G, N, Na, c, [sa, sb])
+        if d_link and n_link:
+            i += 1
+            G.add_edge(*n_link)
+            G.remove_edge(*d_link)
+
+    P = p_from_G(G, Na)
+    return P
+
+def rewire_simul_n(c, na, sa, sb, P, t, N, L, n_samp):
+    p = []
+    for i in range(n_samp):
+        print(f'Getting simul {i} / {n_samp}')
+        psamp = rewire_simul_simple(c, na, sa, sb, P, t, N, L)
+        p.append(psamp)
+    return p
+
+def grow_simul_simple(c, na, sa, sb, P, t, N, L, x):
+    # TODO: finish this
+    paa, pbb = P
+    Na = int(na*N)
+    Nb = int((1-na)*N)
+    N = Na + Nb
+    Laa = L*paa
+    Lbb = L*pbb
+    Lab = L - Laa - Lbb
+    p_sbm = [[2*Laa/(Na*(Na-1)), Lab/(Na*Nb)], [Lab/(Na*Nb), 2*Lbb/(Nb*(Nb-1))]]
+    sizes = [Na, Nb]
+    G = nx.stochastic_block_model(sizes=sizes, p=p_sbm)
+    p_simul = p_from_G(G, Na)
+    print(f'p orig: {P}')
+    print(f'p simul: {p_simul}')
+    i = 0
+    while i < t:
+        grow_ba_two(G, sources, target_list, dist, m, cval, ret_counts=False, n_i={}, Na=0)
+        n_link, d_link, _, _, _ = am._rewire_candidates_exact(G, N, Na, c, [sa, sb])
+        if d_link and n_link:
+            i += 1
+            G.add_edge(*n_link)
+            G.remove_edge(*d_link)
+
+    P = p_from_G(G, Na)
+    return P
+
+def p_from_G(G, Na):
+    paa, pbb, pab = 0, 0, 0
+    for edge in G.edges():
+        if edge[0] >= Na and edge[1] >= Na:
+            pbb += 1
+        elif edge[0] < Na and edge[1] < Na:
+            paa += 1
+        else:
+            pab += 1
+    tot = paa + pab + pbb
+    paa /= tot if tot > 0 else 1
+    pbb /= tot if tot > 0 else 1
+    return paa, pbb
+
 
 def check_solutions(equilibria):
     eqs = []
@@ -62,3 +165,25 @@ def p_to_t(equilibria):
         ts.append((taa, tbb))
     return ts
 
+def growth_path(c, na, sa, sb, P, L0, t):
+    paa, pbb = P #p_from_G(G0, Na)
+    y0 = np.array([paa, pbb, L0])
+
+    def growth_model(y, t):
+        paa, pbb, L = y
+        maa = (c*.5*(paa + 1 - pbb) + (1-c)*na)*sa
+        mab = (c*.5*(pbb + 1 - paa) + (1-c)*(1-na))*(1-sa)
+        mba = (c*.5*(paa + 1 - pbb) + (1-c)*na)*(1-sb)
+        mbb = (c*.5*(pbb + 1 - paa) + (1-c)*(1-na))*sb
+
+        dlaa = na*maa
+        dlbb = (1-na)*mbb
+        dL = na*(maa + mab) + (1-na)*(mba + mbb)
+
+        dPaa = (dlaa - dL*paa) / L
+        dPbb = (dlbb - dL*pbb) / L
+
+        return np.array([dPaa, dPbb, dL])
+
+    ysol = odeint(growth_model, y0, t)
+    return ysol

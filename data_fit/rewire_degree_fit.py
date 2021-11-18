@@ -323,9 +323,6 @@ class RewireFit(object):
         self.n_evol = n_evol
         self.na = na
 
-    def update_counts(self, counts):
-        self.counts = counts
-
     def loglik(self, theta): #c, sa, sb, x, n):
         sa, sb, c = theta
         llik = 0
@@ -350,24 +347,44 @@ class RewireFit(object):
                 hess -= _hesslik_step_t_probs(c, sa, sb, nt, xt)
         return hess
 
-
     def solve(self, x0=[.5, .5, .5], method='trust-constr'):
         bounds = optimize.Bounds([.05, 0.05, 0.05], [.95, .95, .95])
         opt = optimize.minimize(self.loglik, x0, method=method, jac=self.grad_loglik, hess=self.hess_loglik, bounds=bounds)
         self.opt = opt
         return opt.x
 
-    def solve_randx0(self, n_x0=10, method='trust-constr'):
-        opt = None
-        fun = np.inf
-        for _ in range(n_x0):
-            x0 = np.random.uniform(.1, .9, 3)
-            sol = self.solve(x0, method)
-            if sol.fun < fun:
-                fun = sol.fun
-                opt = sol
-        self.opt = opt
+    def loglik_c0(self, theta): #c, sa, sb, x, n):
+        sa, sb = theta
+        llik = 0
+        for (t, xt), nt in zip(self.x_evol.items(), self.n_evol.values()):
+            if t > 1: # and (xt['aa'] or xt['ab'] or xt['bb'] or xt['ba']):
+                llik -= _lik_step_t_light(0, sa, sb, nt, xt)
+        return llik
+
+    def grad_loglik_c0(self, theta): #c, sa, sb, x, n):
+        grad = np.zeros(3)
+        sa, sb = theta
+        for (t, xt), nt in zip(self.x_evol.items(), self.n_evol.values()):
+            if t > 1:
+                grad -= _gradlik_step_t_probs(0, sa, sb, nt, xt)
+        grad = grad[:2]
+        return grad
+
+    def hess_loglik_c0(self, theta): #c, sa, sb, x, n):
+        sa, sb = theta
+        hess = np.zeros((3, 3))
+        for (t, xt), nt in zip(self.x_evol.items(), self.n_evol.values()):
+            if t > 1:
+                hess -= _hesslik_step_t_probs(0, sa, sb, nt, xt)
+        hess = hess[:2, :2]
+        return hess
+
+    def solve_c0(self, x0=[.5, .5], method='trust-constr'):
+        bounds = optimize.Bounds([0.05, 0.05], [.95, .95])
+        opt = optimize.minimize(self.loglik_c0, x0, method=method, jac=self.grad_loglik_c0, hess=self.hess_loglik_c0, bounds=bounds)
+        self.opt_c0 = opt
         return opt.x
+
 
 
 def grow_gradloglikbase_jointmulti(sa, sb, c, Paa, Pbb, cnt, na):
