@@ -280,10 +280,11 @@ def plot_snapshots(dt=12):
 
 
 def plot_snapshots_evolution(dt=12, n_samp=5):
-    fig, axs= plt.subplots(1, 6, figsize=(6*3, 3), sharey=True)
+    fig, axs= plt.subplots(1, 5, figsize=(5*3, 3), sharey=True)
     sas, sbs, cs, nas = [], [], [], []
     sas0, sbs0 = [], []
-    dates = [(2002, 2003), (2003, 2005), (2005, 2007), (2007, 2009), (2009, 2011)]
+    #dates = [(2002, 2003), (2003, 2005), (2005, 2007), (2007, 2009), (2009, 2011)]
+    dates = [(2002, 2003), (2003, 2005), (2005, 2007), (2007, 2011)] #, (2009, 2011)]
     for i, (start, end) in enumerate(dates):
         x, n, obs, net_base, obs_0 = get_data_in_range(start, end, dt=dt, return_net=True)
         na = obs['na']
@@ -321,7 +322,7 @@ def plot_snapshots_evolution(dt=12, n_samp=5):
         axs[i+1].plot(t[xdistsim], tsim[1], 'x', label='Simulated '+ r'$T_{bb}$', color='b')
         axs[i+1].plot(t[xdist], obs['taa'], 'o', label='Observed '+ r'$T_{aa}$', color='g')
         axs[i+1].plot(t[xdist], obs['tbb'], 'o', label='Observed '+ r'$T_{bb}$', color='b')
-        fig.savefig('plots/snapshot_evolution_dt{}_boards_directors.pdf'.format(dt))
+        fig.savefig('plots/snapshot_evolution_dt{}_boards_directors_4dates.pdf'.format(dt))
 
     xvals = ['{}-\n{}'.format(start+1, end) for start, end in dates]
     axs[1].legend()
@@ -343,13 +344,13 @@ def plot_snapshots_evolution(dt=12, n_samp=5):
     axs[0].set_title('Boards of Directors in Norway\n Estimated Parameters')
     axs[0].legend()
 
-    for i in range(5):
+    for i in range(4):
         axs[i+1].set_xlabel('Mean-field time')
         axs[i+1].set_ylabel('Estimate')
         axs[i+1].set_title('Evolution \n{}-{}'.format(dates[i][0]+1, dates[i][1]))
 
     fig.tight_layout()
-    fig.savefig('plots/snapshot_evolution_dt{}_boards_directors.pdf'.format(dt))
+    fig.savefig('plots/snapshot_evolution_dt{}_boards_directors_4dates.pdf'.format(dt))
 
 def plot_snapshots_evolution_c0(dt=12):
     fig, axs= plt.subplots(1, 6, figsize=(6*3, 3), sharey=True)
