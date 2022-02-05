@@ -7,6 +7,8 @@ import seaborn as sns
 from itertools import combinations
 from pandas import DataFrame
 import json
+import get_fixed_points as gfp
+import pandas as pd
 
 def plot_params_citation():
     fig, axs = plt.subplots(1, 2, figsize=(7, 3)) #)3, figsize=(10, 3))
@@ -83,6 +85,104 @@ def plot_params_citation():
     fig.tight_layout()
     fig.savefig('plots/citation_params_40.pdf')
 
+
+def get_all_cp_pairs(outpath=''):
+    group_names = json.load(open('utils/pacs_ref.json', 'r'))
+    group_names.pop('01')
+    group_names.pop('99')
+    df = DataFrame(columns=['a', 'b', 'paa', 'pbb', 'pab', 'acore', 'bcore', 'sbm_pmat', 'na', 'N', 'taa', 'tbb'])
+    for a, b in combinations(group_names, 2):
+        print(a, b)
+        _, _, obs = pu.cp_stats([a], [b])
+        obs['a'] = a
+        obs['b'] = b
+        df = df.append(obs, ignore_index=True)
+        df.to_csv(outpath, index=None, sep='|')
+
+def get_average_m(x):
+    ms = []
+    for xt in x.values():
+        mt = sum([xi[3] for xi in xt])
+        ms.append(mt)
+    return np.mean(ms)
+
+
+def plot_t_error(n_samp=10):
+    groups = ['61', '62', '63', '64', '65', '66', '67', '68']
+    groups = ['01', '02', '03', '04', '05', '07', '11', '12', '21', '23', '24', '25']
+    fig, ax = plt.subplots(figsize=(4, 4)) #)3, figsize=(10, 3))
+    ax.plot([0, 1], [0, 1], alpha=.4)
+    ax.set_xlabel('Pref. Attch. Error.')
+    ax.set_ylabel('No Pref. Attch. Error.')
+    for a, b in combinations(groups, 2):
+        print(a, b)
+        x, n, obs = pu.network_stats(a=[a], b=[b])
+        na = obs['na']
+        GF = gdf.GrowthFit(x, n, na)
+        print('Fitting model... ')
+        sa, sb, c = GF.solve()
+        sa0, sb0 = GF.solve_c0()
+        del GF
+        m = int(get_average_m(x))
+        print('Obtaining simulations... ')
+        N = obs['N']
+        print(N)
+        P = gfp.grow_simul_n(c, na, sa, sb, N, m, n_samp)
+        P0 = gfp.grow_simul_n(0, na, sa0, sb0, N, m, n_samp)
+        T = t_from_p(np.mean(P, 0))
+        T0 = t_from_p(np.mean(P0, 0))
+        err = np.sqrt((T[0] - obs['taa'])**2 + (T[1]-obs['tbb'])**2)
+        err0 = np.sqrt((T0[0] - obs['taa'])**2 + (T0[1]-obs['tbb'])**2)
+        ax.plot(err, err0, '.',c='b')
+        fig.savefig('plots_sep/t_error_citation.pdf')
+
+
+def asp_error(n_samp=10):
+    df = pd.read_csv('asp_cp_top_pseq.csv', sep=' ', dtype={'a': str, 'b': str})
+    fig, ax = plt.subplots(figsize=(4, 4)) #)3, figsize=(10, 3))
+    ax.plot([0, 1], [0, 1], alpha=.4)
+    ax.set_xlabel('Pref. Attch. Error.')
+    ax.set_ylabel('No Pref. Attch. Error.')
+    line = 'a|b|sa|sb|c|sa0|sb0|Paa|Pbb|err|err0\n'
+    with open('asp/cp_top_pseq_fit.csv', 'w') as w:
+        w.write(line)
+    for row in zip(df[['a', 'b']].values):
+        a, b = row[0][0], row[0][1]
+        x, n, obs = pu.network_stats(a=[a], b=[b])
+        na = obs['na']
+        GF = gdf.GrowthFit(x, n, na)
+        print('Fitting model... ')
+        sa, sb, c = GF.solve()
+        sa0, sb0 = GF.solve_c0()
+        del GF
+        m = int(get_average_m(x))
+        print('Obtaining simulations... ')
+        N = obs['N']
+        print(N)
+        t = np.linspace(0, 10000, 5000)
+        ysol = gfp.growth_path(c, na, sa, sb, [1/3, 1/3], 1000, t)
+        P = ysol[-1]
+        #P = gfp.grow_simul_n(c, na, sa, sb, N, m, n_samp)
+        ysol0 = gfp.growth_path(0, na, sa0, sb0, [1/3, 1/3], 1000, t)
+        P0 = ysol0[-1]
+        #P0 = gfp.grow_simul_n(0, na, sa0, sb0, N, m, n_samp)
+        T = t_from_p(P)
+        T0 = t_from_p(P0)
+        err = np.sqrt((T[0] - obs['taa'])**2 + (T[1]-obs['tbb'])**2)
+        err0 = np.sqrt((T0[0] - obs['taa'])**2 + (T0[1]-obs['tbb'])**2)
+        line = '{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}\n'.format(a, b, sa, sb, c, sa0, sb0, P[0], P[1], err, err0)
+        with open('asp/cp_top_pseq_fit.csv', 'a') as w:
+            w.write(line)
+        ax.plot(err, err0, '.',c='b')
+        fig.savefig('asp/asp_error_citation.pdf')
+
+
+def t_from_p(P):
+    paa, pbb, _ = P
+    pab = 1 - paa - pbb
+    taa = (2*paa) / (2*paa + pab)
+    tbb = (2*pbb) / (2*pbb + pab)
+    return taa, tbb
 
 
 

@@ -1,11 +1,11 @@
-import growth_fit as gf
+#import growth_fit as gf
 import growth_degree_fit as gdf
 import matplotlib.pyplot as plt; plt.ion()
 import numpy as np
 import seaborn as sns
 import pandas as pd
 
-def test_growth_fit(N=1000, n_samp=5, clen=10, em=False, deg_fit=False):
+def test_growth_fit(N=1000, n_samp=5, clen=10, em=False, deg_fit=True):
     """
     Plot a function of goodness of fit for a grid of na-sa values, fixed sb  several values of c
     """
@@ -22,7 +22,7 @@ def test_growth_fit(N=1000, n_samp=5, clen=10, em=False, deg_fit=False):
             print(i, j)
             for k, cval in enumerate(cvals):
                 if deg_fit:
-                    figname = 'plots/test_growth_fit_degfull_N{}.pdf'.format(N)
+                    figname = 'plots/test_growth_fit_degfull_light_N{}.pdf'.format(N)
                     x, n = gdf.am.run_growing_varying_m(N, na, cval, [sa, sb], ['poisson', 30], deg_based=True)
                     GF = gdf.GrowthFit(x, n, na=na)
                     GF.solve()

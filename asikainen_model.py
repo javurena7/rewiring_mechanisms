@@ -691,7 +691,7 @@ def _pick_ba_two_targets_exact(G, source, target_list, dist, m, cval):
     if sum(target_prob_list) == 0:
         return targets
     candidates = set()
-    for i in range(m):
+    for i in range(min([m, len(target_list_copy)])):
         probs = np.array(target_prob_list) / sum(target_prob_list)
         if random.random() < cval:
             k = np.random.choice(target_list_copy, p=probs, replace=False)

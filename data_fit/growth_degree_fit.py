@@ -291,17 +291,39 @@ class GrowthFit(object):
         self.opt = opt
         return opt.x
 
-    def solve_randx0(self, n_x0=10, method='trust-constr'):
-        opt = None
-        fun = np.inf
-        for _ in range(n_x0):
-            x0 = np.random.uniform(.1, .9, 3)
-            sol = self.solve(x0, method)
-            if sol.fun < fun:
-                fun = sol.fun
-                opt = sol
-        self.opt = opt
+    def loglik0(self, theta): #c, sa, sb, x, n):
+        sa, sb = theta
+        llik = 0
+        for (t, xt), nt in zip(self.x_evol.items(), self.n_evol.values()):
+            if t > 10:
+                llik -= _lik_step_t_probs(0, sa, sb, nt, xt)
+        return llik
+
+    def grad_loglik0(self, theta): #c, sa, sb, x, n):
+        grad = np.zeros(3)
+        sa, sb = theta
+        for (t, xt), nt in zip(self.x_evol.items(), self.n_evol.values()):
+            if t > 10:
+                grad -= _gradlik_step_t_probs(0, sa, sb, nt, xt)
+        grad = grad[:2]
+        return grad
+
+    def hess_loglik0(self, theta): #c, sa, sb, x, n):
+        sa, sb = theta
+        hess = np.zeros((3, 3))
+        for (t, xt), nt in zip(self.x_evol.items(), self.n_evol.values()):
+            if t > 10:
+                hess -= _hesslik_step_t_probs(0, sa, sb, nt, xt)
+        hess = hess[:2, :2]
+        return hess
+
+
+    def solve_c0(self, x0=[.5, .5], method='trust-constr'):
+        bounds = optimize.Bounds([.05, 0.05], [.95, .95])
+        opt = optimize.minimize(self.loglik0, x0, method=method, jac=self.grad_loglik0, hess=self.hess_loglik0, bounds=bounds)
+        self.opt0 = opt
         return opt.x
+
 
 class GrowthEM(GrowthFit):
     def __init__(self, Paa, Pbb, obs_counts, na, prior=5):

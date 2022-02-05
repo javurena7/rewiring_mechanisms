@@ -368,7 +368,7 @@ def plot_snapshots_evolution_growth(gdt=60*60*24, ttype='retweet'):
     fig, axs= plt.subplots(1, 4, figsize=(4*3, 3), sharey=True)
     sas, sbs, cs, nas = [], [], [], []
     dates = [('2020-08-24', '2020-09-15'), ('2020-10-02', '2020-10-23'), ('2020-11-15', '2020-12-07')]
-    dates = [('2020-08-24', '2020-09-30'), ('2020-10-02', '2020-10-08'), ('2020-11-15', '2020-11-21')]
+    dates = [('2020-08-24', '2020-09-27'), ('2020-10-02', '2020-10-05'), ('2020-11-15', '2020-11-18')]
     for i, (start, end) in enumerate(dates):
         df = read_logs(logpath, ttype=ttype, date0=start, daten=end)
         net, df, _ = get_net0(df, DT=60*60*12)
@@ -390,7 +390,7 @@ def plot_snapshots_evolution_growth(gdt=60*60*24, ttype='retweet'):
         axs[i+1].plot(t, ysol[:, 1], color='b', label='Predicted ' + r'$T_{bb}$')
         axs[i+1].plot(t[xdist], obs['taa'], 'x', label='Observed ' + r'$T_{aa}$', color='g')
         axs[i+1].plot(t[xdist], obs['tbb'], 'x', label='Observed ' + r'$T_{bb}$', color='b')
-        fig.savefig('plots/snapshot_evolution_growth_gdt{}_climate_twitter_{}_5days.pdf'.format(gdt, ttype))
+        fig.savefig('plots/snapshot_evolution_growth_gdt{}_climate_twitter_{}_2days.pdf'.format(gdt, ttype))
     xvals = ['{}-\n{}'.format(start, end) for start, end in dates]
     axs[1].legend()
     axs[0].plot(xvals, sas, '-', color='g', alpha=.5)
@@ -415,7 +415,7 @@ def plot_snapshots_evolution_growth(gdt=60*60*24, ttype='retweet'):
         axs[i+1].set_title('{} -\n{}'.format(dates[i][0], dates[i][1]))
 
     fig.tight_layout()
-    fig.savefig('plots/snapshot_evolution_growth_gdt{}_climate_twitter_{}_5days.pdf'.format(gdt, ttype))
+    fig.savefig('plots/snapshot_evolution_growth_gdt{}_climate_twitter_{}_2days.pdf'.format(gdt, ttype))
 
 
 def sort_sources_growth(net, df, gdt):

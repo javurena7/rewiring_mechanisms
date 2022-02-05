@@ -3,6 +3,7 @@ from scipy.integrate import odeint
 import numpy as np
 import sys
 sys.path.append('..')
+sys.path.append('../..')
 import networkx as nx
 import asikainen_model as am
 
@@ -85,32 +86,24 @@ def rewire_simul_n(c, na, sa, sb, P, t, N, L, n_samp):
         p.append(psamp)
     return p
 
-def grow_simul_simple(c, na, sa, sb, P, t, N, L, x):
-    # TODO: finish this
-    paa, pbb = P
-    Na = int(na*N)
-    Nb = int((1-na)*N)
-    N = Na + Nb
-    Laa = L*paa
-    Lbb = L*pbb
-    Lab = L - Laa - Lbb
-    p_sbm = [[2*Laa/(Na*(Na-1)), Lab/(Na*Nb)], [Lab/(Na*Nb), 2*Lbb/(Nb*(Nb-1))]]
-    sizes = [Na, Nb]
-    G = nx.stochastic_block_model(sizes=sizes, p=p_sbm)
-    p_simul = p_from_G(G, Na)
-    print(f'p orig: {P}')
-    print(f'p simul: {p_simul}')
-    i = 0
-    while i < t:
-        grow_ba_two(G, sources, target_list, dist, m, cval, ret_counts=False, n_i={}, Na=0)
-        n_link, d_link, _, _, _ = am._rewire_candidates_exact(G, N, Na, c, [sa, sb])
-        if d_link and n_link:
-            i += 1
-            G.add_edge(*n_link)
-            G.remove_edge(*d_link)
+def grow_simul_simple(c, na, sa, sb, N, m):
+    G, Na, dist = am.ba_starter(N, na, sa, sb)
+    sources = list(range(N))
+    target_list = list(np.random.choice(sources, 5))
+    while len(sources) > 0:
+        am.grow_ba_two(G, sources, target_list, dist, m, c, ret_counts=False, n_i={}, Na=0)
 
     P = p_from_G(G, Na)
     return P
+
+def grow_simul_n(c, na, sa, sb, N, m, n_samp):
+    p = []
+    for i in range(n_samp):
+        print(f'Getting simul {i} / {n_samp}')
+        psamp = grow_simul_simple(c, na, sa, sb, N, m)
+        p.append(psamp)
+    return p
+
 
 def p_from_G(G, Na):
     paa, pbb, pab = 0, 0, 0
