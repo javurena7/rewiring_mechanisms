@@ -2,6 +2,7 @@ import numpy as np
 import networkx as nx
 from collections import Counter
 import pandas as pd
+import copy
 
 citation_path = '../data/isi/All_19002013_CitationList_Mapped_samp.txt'
 fields_path = '../data/isi/major_fields_total.txt'
@@ -84,8 +85,10 @@ class ISIData(object):
         self.nnodes = {'a': set(), 'b': set()}
         if not net0:
             self.net = nx.empty_graph()
+            self.deg_dist = {'a': {}, 'b': {}}
         else:
             self.net = net0
+            self.deg_dist_n0()
         self.years = years
 
     def get_metadata(self, min_yr=0, top_yr=np.inf):
@@ -159,7 +162,7 @@ class ISIData(object):
             cits = cits.split(',')
             add = False
             self.current_x = []
-            self.update_deg_dist()
+            self.update_net_stats()
             for cit in cits:
                 if self.check_a(cit):
                     self.tots['l'+new_g+'a'] += 1
@@ -179,9 +182,10 @@ class ISIData(object):
                 self.x[self.i] = fx
                 nx = self.current_n
                 self.n[self.i] = nx
+                self.update_deg_dist(fx)
                 self.i += 1
 
-    def update_deg_dist(self):
+    def deg_dist_n0(self):
         a_nodes = []
         b_nodes = []
         for node in self.net.nodes():
@@ -193,12 +197,36 @@ class ISIData(object):
         a_deg = Counter(a_nodes)
         b_deg = Counter(b_nodes)
         self.deg_dist = {'a': a_deg, 'b': b_deg}
-        pa = sum([k*x for k, x in a_deg.items()])
-        pb = sum([k*x for k, x in b_deg.items()])
-        ua = sum(a_deg.values())
-        ub = sum(b_deg.values())
+
+
+
+    def update_net_stats(self):
+
+        pa = sum([k*x for k, x in self.deg_dist['a'].items()])
+        pb = sum([k*x for k, x in self.deg_dist['b'].items()])
+        ua = sum(self.deg_dist['a'].values())
+        ub = sum(self.deg_dist['b'].values())
         self.current_n = [pa, pb, ua, ub]
 
+    def update_deg_dist(self, x_i): #x_i is fx
+    # Light version
+        n_i = copy.deepcopy(self.deg_dist)
+        src = None
+        for x in x_i:
+            deg = x[1]
+            cnt = x[3]
+            tgt = x[0][1]
+            src = x[0][0]
+
+            n_i[tgt][deg] = max([n_i[tgt].get(deg, 0) - cnt, 0])
+            n_i[tgt][deg+1] = n_i[tgt].get(deg+1, 0) + cnt
+        tot_deg = sum([x[3] for x in x_i])
+        if src:
+            n_i[src][tot_deg] = n_i[src].get(tot_deg, 0) + 1
+        clean_ni = {'a': {}, 'b': {}}
+        for sg in clean_ni:
+            clean_ni[sg] = {k: v for k, v in n_i[sg].items() if v > 0}
+        self.deg_dist = clean_ni
 
     def update_stats(self, sgroup, tgroup, tgt):
         xg = sgroup + tgroup
