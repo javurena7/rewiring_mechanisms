@@ -27,11 +27,12 @@ def cp_correlation(laa, lab, lbb, n, na, a):
     corr = (exy - ex*ey) / np.sqrt(sx*sy)
     return corr
 
-def cp_correlation_cont(paa, pbb, na, a):
+def cp_correlation_cont(paa, pbb, na, rho, a):
+    # rho is the newtork density rho=2L/N(N-1)
     pab = 1 - paa - pbb
-    ex = paa*na**2 + 2*pab*na*(1-na) + pbb*(1-na)**2
+    ex = rho
     ey = na**2 + 2*a*na*(1-na)
-    exy = paa*na**2 + 2*pab*a*na*(1-na)
+    exy = (paa + a*pab)*rho
     sx = ex*(1-ex)
     sy = ey*(1-ey)
     corr = (exy - ex*ey) / np.sqrt(sx*sy)
@@ -41,28 +42,31 @@ def plot_test_cont():
     import matplotlib.pyplot as plt; plt.ion()
     import seaborn as sns
     nas = (.1, .2, .3, .4, .5)
+    rhos = (.001, .005, .01, .05, .1)
     ps = range(101)
-    fig, axs = plt.subplots(1, 5, figsize=(5*3, 3), sharex=True, sharey=True)
+    fig, axs = plt.subplots(5, 5, figsize=(5*3, 5*3), sharex=True, sharey=True)
     na_corr = {}
     for i, na in enumerate(nas):
-        vals = np.zeros((101, 101))
-        vals[:] = np.nan
-        for paa, pbb in product(ps, ps):
-            if paa + pbb <= 100:
-                corr = cp_correlation_cont(paa/100, pbb/100, na, 0)
-                vals[paa, pbb] = corr
-                #vals[pbb, paa] = np.nan
-        #vals = DataFrame(vals,columns=['paa', 'pbb', 'cr'])
-        sns.heatmap(vals, ax=axs[i], center=0)
-        axs[i].set_xlabel(r'$P_{bb}$')
-        axs[i].set_ylabel(r'$P_{aa}$')
-        axs[i].invert_yaxis()
-        axs[i].set_title(r'$n_a=$' + f'{na}' )
-        na_corr[str(na)] = vals
-    xticks = axs[i].get_xticks()
-    yticks = axs[i].get_yticks()
-    axs[i].set_xticklabels([str(np.round(p/100, 2)) for p in xticks])
-    axs[i].set_yticklabels([str(np.round(p/100, 2)) for p in yticks])
+        for j, rho in enumerate(rhos):
+            vals = np.zeros((101, 101))
+            vals[:] = np.nan
+            for paa, pbb in product(ps, ps):
+                if paa + pbb <= 100:
+                    corr = cp_correlation_cont(paa/100, pbb/100, na, rho, 0)
+                    corr = min([corr, 1])
+                    vals[paa, pbb] = corr
+                    #vals[pbb, paa] = np.nan
+            #vals = DataFrame(vals,columns=['paa', 'pbb', 'cr'])
+            sns.heatmap(vals, ax=axs[j, i], center=0, vmin=-.2, vmax=1)
+            axs[j,i].set_xlabel(r'$P_{bb}$')
+            axs[j,i].set_ylabel(r'$P_{aa}$')
+            axs[j,i].set_title(r'$n_a=$' + f'{na}\n' + r'$\rho=$' + f'{rho}')
+            na_corr[str(na)] = vals
+    xticks = axs[j,i].get_xticks()
+    axs[j,i].invert_yaxis()
+    yticks = axs[j,i].get_yticks()
+    axs[j,i].set_xticklabels([str(np.round(p/100, 2)) for p in xticks])
+    axs[j,i].set_yticklabels([str(np.round(p/100, 2)) for p in yticks])
     fig.suptitle('Continuous correlation to ideal CP matrix')
     fig.tight_layout()
     fig.savefig('plots/cont_corr_cp_mat.pdf')
