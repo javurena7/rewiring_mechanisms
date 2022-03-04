@@ -291,6 +291,18 @@ class GrowthFit(object):
         self.opt = opt
         return opt.x
 
+    def solve_randx0(self, n_x0=10, method='trust-constr'):
+        opt = None
+        fun = np.inf
+        for _ in range(n_x0):
+            x0 = np.random.uniform(.1, .9, 3)
+            sol = self.solve(x0, method)
+            if sol.fun < fun:
+                fun = sol.fun
+                opt = sol
+        return opt
+
+
     def loglik0(self, theta): #c, sa, sb, x, n):
         sa, sb = theta
         llik = 0

@@ -6,6 +6,162 @@ sys.path.append('..')
 sys.path.append('../..')
 import networkx as nx
 import asikainen_model as am
+from pandas import DataFrame
+from itertools import product
+
+# TODO: test correlations as a general measure
+# TODO: check if the measure is alright
+# TODO: generalize plots for four datasets
+# TODO: add CP measure to plot_evol cases
+
+
+def cp_correlation(laa, lab, lbb, n, na, a):
+    nb = n - na
+    N = n*(n-1)
+    exy = 2*laa / N + 2*lab*a / N
+    ex = 2*(laa + lab + lbb) / N
+    ey = na*(na-1) / N + (a*2*nb*na) / N
+    sx = ex*(1-ex)
+    sy = ey*(1-ey)
+    #print(exy, ex, ey)
+    corr = (exy - ex*ey) / np.sqrt(sx*sy)
+    return corr
+
+def cp_correlation_cont(paa, pbb, na, a):
+    pab = 1 - paa - pbb
+    ex = paa*na**2 + 2*pab*na*(1-na) + pbb*(1-na)**2
+    ey = na**2 + 2*a*na*(1-na)
+    exy = paa*na**2 + 2*pab*a*na*(1-na)
+    sx = ex*(1-ex)
+    sy = ey*(1-ey)
+    corr = (exy - ex*ey) / np.sqrt(sx*sy)
+    return corr
+
+def plot_test_cont():
+    import matplotlib.pyplot as plt; plt.ion()
+    import seaborn as sns
+    nas = (.1, .2, .3, .4, .5)
+    ps = range(101)
+    fig, axs = plt.subplots(1, 5, figsize=(5*3, 3), sharex=True, sharey=True)
+    na_corr = {}
+    for i, na in enumerate(nas):
+        vals = np.zeros((101, 101))
+        vals[:] = np.nan
+        for paa, pbb in product(ps, ps):
+            if paa + pbb <= 100:
+                corr = cp_correlation_cont(paa/100, pbb/100, na, 0)
+                vals[paa, pbb] = corr
+                #vals[pbb, paa] = np.nan
+        #vals = DataFrame(vals,columns=['paa', 'pbb', 'cr'])
+        sns.heatmap(vals, ax=axs[i], center=0)
+        axs[i].set_xlabel(r'$P_{bb}$')
+        axs[i].set_ylabel(r'$P_{aa}$')
+        axs[i].invert_yaxis()
+        axs[i].set_title(r'$n_a=$' + f'{na}' )
+        na_corr[str(na)] = vals
+    xticks = axs[i].get_xticks()
+    yticks = axs[i].get_yticks()
+    axs[i].set_xticklabels([str(np.round(p/100, 2)) for p in xticks])
+    axs[i].set_yticklabels([str(np.round(p/100, 2)) for p in yticks])
+    fig.suptitle('Continuous correlation to ideal CP matrix')
+    fig.tight_layout()
+    fig.savefig('plots/cont_corr_cp_mat.pdf')
+
+    return na_corr, (fig, axs)
+
+def plot_test_disc():
+    import matplotlib.pyplot as plt; plt.ion()
+    import seaborn as sns
+    nas = (.1, .2, .3, .4, .5)
+    ps = range(101)
+    fig, axs = plt.subplots(1, 5, figsize=(5*3, 3), sharex=True, sharey=True)
+    na_corr = {}
+    for i, na in enumerate(nas):
+        vals = np.zeros((101, 101))
+        vals[:] = np.nan
+        for paa, pbb in product(ps, ps):
+            if paa + pbb <= 100:
+                corr = cp_correlation_cont(paa/100, pbb/100, na, 0)
+                vals[paa, pbb] = corr
+                #vals[pbb, paa] = np.nan
+        #vals = DataFrame(vals,columns=['paa', 'pbb', 'cr'])
+        sns.heatmap(vals, ax=axs[i], center=0)
+        axs[i].set_xlabel(r'$P_{bb}$')
+        axs[i].set_ylabel(r'$P_{aa}$')
+        axs[i].invert_yaxis()
+        axs[i].set_title(r'$n_a=$' + f'{na}' )
+        na_corr[str(na)] = vals
+    xticks = axs[i].get_xticks()
+    yticks = axs[i].get_yticks()
+    axs[i].set_xticklabels([str(np.round(p/100, 2)) for p in xticks])
+    axs[i].set_yticklabels([str(np.round(p/100, 2)) for p in yticks])
+    fig.suptitle('Continuous correlation to ideal CP matrix')
+    fig.tight_layout()
+    fig.savefig('plots/cont_corr_cp_mat.pdf')
+
+
+def cp_correlation_alpha(laa, lab, lbb, n, na):
+    alphas = np.linspace(0, 1, 201)
+    cps = []
+    for a in alphas:
+        corr = cp_correlation(laa, lab, lbb, n, na, a)
+        corr = corr if corr < 1 else 0
+        cps.append(corr)
+    idx = np.argmax(cps)
+    return cps[idx], alphas[idx]
+
+
+def p_mat_correlation(L, N, Na, a):
+    paa = np.linspace(0, 1, 101)
+    pbb = np.linspace(0, 1, 101)
+    vals = []
+    Nb = N - Na
+    for paa, pbb in product(paa, pbb):
+        if paa + pbb <= 1:
+            laa = min([paa*L, Na*(Na-1)/2])
+            lbb = min([pbb*L, Nb*(Nb-1)/2])
+            lab = L - laa - lbb
+            corr = cp_correlation(laa, lab, lbb, N, Na, a)
+            it = [paa, pbb, corr]
+            vals.append(it)
+    vals = DataFrame(vals, columns=['paa', 'pbb', 'cr'])
+    return vals
+
+
+def get_cp_corr(df):
+    cs_a, als_a, cs_b, als_b = [], [], [], []
+    for i, row in df.iterrows():
+        Na, Nb = int(row.N*row.na), int(row.N*(1-row.na))
+        corr_a, a = cp_correlation_alpha(row.laa, row.lab, row.lbb, row.N, Na)
+        cs_a.append(corr_a); als_a.append(a)
+        corr_b, b = cp_correlation_alpha(row.lbb, row.lab, row.laa, row.N, Nb)
+        cs_b.append(corr_b); als_b.append(b)
+    df['corr_a'] = cs_a
+    df['al_a'] = als_a
+    df['corr_b'] = cs_b
+    df['al_b'] = als_b
+    return df
+
+
+
+
+def test_cp_correlation(N, Na, paa, pab, pbb, a):
+    net = nx.stochastic_block_model([Na, N-Na], [[paa, pab], [pab, pbb]])
+    arr = nx.adj_matrix(net).toarray()
+
+    net_cp = nx.stochastic_block_model([Na, N-Na], [[1, a], [a, 0]])
+    arr_cp = nx.adj_matrix(net_cp).toarray()
+
+    laa = arr[0:Na, 0:Na].sum() / 2
+    lab = arr[Na:N, 0:Na].sum()
+    lbb = arr[Na:N, Na:N].sum() / 2
+
+    corr = np.corrcoef(arr.flatten(), arr_cp.flatten())[0, 1]
+    corr_test = cp_correlation(laa, lab, lbb, N, Na, a)
+
+    print(corr, corr_test)
+
+
 
 def rewire_fixed_points(c, na, sa, sb):
     paa, pbb = sm.symbols('paa, pbb', negative=False)
@@ -49,7 +205,6 @@ def rewire_path(c, na, sa, sb, P, t):
         dPbb = (1-na)*mbb - (1-na)*tbb*(mba + mbb)
 
         return np.array([dPaa, dPbb])
-
     ysol = odeint(rewire_model, y0, t)
     return ysol
 
@@ -68,7 +223,7 @@ def rewire_simul_simple(c, na, sa, sb, P, t, N, L):
     print(f'p orig: {P}')
     print(f'p simul: {p_simul}')
     i = 0
-    while i < 2*t:
+    while i < t:
         n_link, d_link, _, _, _ = am._rewire_candidates_exact(G, N, Na, c, [sa, sb])
         if d_link and n_link:
             i += 1
@@ -77,6 +232,130 @@ def rewire_simul_simple(c, na, sa, sb, P, t, N, L):
 
     P = p_from_G(G, Na)
     return P
+
+
+def rewire_steps(c, na, sa, sb, P0, N, L, n_steps=10, t_size=5000):
+    """
+    Returns the number of rewiring steps in a time step (in g), around 2500 rewiring steps per time step
+    """
+    t = np.linspace(0, n_steps, t_size)
+    path = rewire_path(c, na, sa, sb, P0, t)
+    rsteps = list(range(0, t_size, int(t_size/n_steps))) + [-1]
+    P_steps = [path[i, :] for i in rsteps]
+    n_ests = [1] + rewire_until_p(c, na, sa, sb, P0, N, L, P_steps)
+    if np.all(n_ests):
+        n_ests = [i-j for i, j in zip(n_ests[1:], n_ests[:-1])]
+        return n_ests
+    else:
+        return None
+
+
+def rewire_until_p(c, na, sa, sb, P0, N, L, P_steps):
+    paa, pbb = P0
+    Na, Nb = int(na*N), int((1-na)*N)
+    N = Na + Nb
+    Laa, Lbb = L*paa, L*pbb
+    Lab = L - Laa - Lbb
+    p_sbm = [[2*Laa/(Na*(Na-1)), Lab/(Na*Nb)], [Lab/(Na*Nb), 2*Lbb/(Nb*(Nb-1))]]
+    sizes = [Na, Nb]
+    G = nx.stochastic_block_model(sizes=sizes, p=p_sbm)
+    p_simul = p_from_G(G, Na)
+    i, j = 0, 1
+    steps = []
+    while j < len(P_steps):
+        n_link, d_link, _, _, _ = am._rewire_candidates_exact(G, N, Na, c, [sa, sb])
+        if d_link and n_link:
+            i += 1
+            G.add_edge(*n_link)
+            G.remove_edge(*d_link)
+            Laa, Lab, Lbb = link_counts(n_link, Na, Laa, Lab, Lbb)
+            Laa, Lab, Lbb = link_counts(d_link, Na, Laa, Lab, Lbb, False)
+            Paa = Laa / L
+            Pbb = Lbb / L
+            dist = np.sqrt((Paa - P_steps[j][0])**2 + (Pbb - P_steps[j][1])**2)
+            if dist < 10e-3:
+                steps.append(i)
+                j += 1
+            elif i > j*3500:
+                print('Real: {}-{}| Sim: {}-{}'.format(P_steps[j][0], P_steps[j][1], Paa, Pbb))
+                steps.append(None)
+                j += 1
+    return steps
+
+def link_counts(link, Na, Laa, Lab, Lbb, add=True):
+    src = 'a' if link[0] <= Na else 'b'
+    tgt = 'a' if link[1] <= Na else 'b'
+    if src == tgt:
+        if src == 'a':
+            Laa = Laa + 1 if add else Laa - 1
+        else:
+            Lbb = Lbb + 1 if add else Lbb - 1
+    else:
+        Lab = Lab + 1 if add else Lab - 1
+
+    return Laa, Lab, Lbb
+
+
+def growth_steps(c, na, sa, sb, P0, L0, N, n_steps=1000, t_size=10000):
+    """
+    Returns the number of evolution steps in a time step (usually around 1/2 and evolution step)
+    """
+    t = np.linspace(0, n_steps, 10000)
+    path = growth_path(c, na, sa, sb, P0, L0, t)
+    rsteps = list(range(0, 10000, int(10000/n_steps)))
+    P_steps = [path[i, 2] for i in rsteps]
+    #n_ests, added_seq = grow_until_p(c, na, sa, sb, P0, L0, N, P_steps, m_avg=10)
+    n_ests = [i-j for i, j in zip(P_steps[1:], P_steps[:-1])]
+    return n_ests
+
+
+def grow_until_p(c, na, sa, sb, P0, L, N, P_steps, m_avg):
+    paa, pbb = P0
+    Na, Nb = int(na*N), int((1-na)*N)
+    N = Na + Nb
+    Laa, Lbb = L*paa, L*pbb
+    Lab = L - Laa - Lbb
+    G, Na, dist = am.ba_starter(N, na, sa, sb)
+    sources = list(range(N))
+    target_list = list(np.random.choice(sources, 5))
+    for tgt in target_list:
+        _ = sources.remove(tgt)
+
+    i, j = 0, 1
+    steps = []
+    added_seq = []
+    m_add = 2*m_avg
+    while i < len(sources):
+        try:
+            counts = am.grow_ba_two(G, sources, target_list, dist, m_avg, c, ret_counts=True, n_i={}, Na=0)
+        except:
+            import pdb; pdb.set_trace()
+        Laa, Lab, Lbb, leftover = add_growth_counts(counts, Laa, Lab, Lbb)
+        added = sum(counts) - leftover
+        added_seq.append(added)
+        i += 1
+        L = Laa + Lab + Lbb
+        Paa = Laa / L
+        Pbb = Lbb / L
+        cp_dist = np.sqrt((Paa - P_steps[j][0])**2 + (Pbb - P_steps[j][1])**2)
+        if cp_dist < 10e-3:
+            steps.append(i)
+            j += 1
+        elif i > j*3000:
+            print('Real: {}-{}| Sim: {}-{}'.format(P_steps[j][0], P_steps[j][1], Paa, Pbb))
+            steps.append(None)
+            j += 1
+    return steps, added_seq
+
+
+def add_growth_counts(counts, Laa, Lab, Lbb):
+    #Classify counts if the added links are: AA, AB, AN, BA, BB, BN
+    Laa += counts[0]
+    Lab += counts[1] + counts[3]
+    Lbb += counts[4]
+    leftover = counts[2] + counts[5]
+    return Laa, Lab, Lbb, leftover
+
 
 def rewire_simul_n(c, na, sa, sb, P, t, N, L, n_samp):
     p = []
@@ -149,6 +428,7 @@ def number_in_range(num):
     else:
         return False
 
+
 def p_to_t(equilibria):
     ts = []
     for ps in equilibria:
@@ -157,6 +437,7 @@ def p_to_t(equilibria):
         tbb = 2*pb / (pb + 1 - pa)
         ts.append((taa, tbb))
     return ts
+
 
 def growth_path(c, na, sa, sb, P, L0, t):
     paa, pbb = P #p_from_G(G0, Na)
@@ -180,3 +461,5 @@ def growth_path(c, na, sa, sb, P, L0, t):
 
     ysol = odeint(growth_model, y0, t)
     return ysol
+
+

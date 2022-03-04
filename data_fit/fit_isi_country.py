@@ -4,16 +4,15 @@ from collections import Counter
 import pandas as pd
 import copy
 
-citation_path = '../data/isi/All_19002013_CitationList_Mapped_samp.txt'
-fields_path = '../data/isi/major_fields_total.txt'
-metadata = '../data/isi/All_19002013_BasicInformation_Sample.txt'
+#citation_path = '../data/isi/All_19002013_CitationList_Mapped_samp.txt'
+#fields_path = '../data/isi/major_fields_total.txt'
+#metadata = '../data/isi/All_19002013_BasicInformation_Sample.txt'
+
+citation_path = '/m/cs/scratch/isi/javier/All_19002013_CitationList_Mapped.txt'
+fields_path = '../major_fields_total.txt'
+metadata = '/m/cs/scratch/networks/data/isi/WoS-Derived/All_19002013_BasicInformation.txt'
+
 countries = 'isi/country_counts.txt'
-
-#citation_path = '/m/cs/scratch/isi/javier/All_19002013_CitationList_Mapped.txt'
-#fields_path = '../major_fields_total.txt'
-#metadata = '/m/cs/scratch/networks/data/isi/WoS-Derived/All_19002013_BasicInformation.txt'
-#countries = 'isi/country_counts.txt'
-
 outpath = 'cp_country_results.txt'
 
 def get_country_groups():
@@ -22,9 +21,6 @@ def get_country_groups():
     return grps_dict
 
 grps_dict = get_country_groups()
-
-
-
 
 def read_metadata():
     #df = pd.read_csv(metadata, sep='|', names=['ID', 'Number', 'lang', 'doctype', 'year', 'date' , 'nauthors', 'naddress','npags', 'nref', 'nfunding', 'ngrantnum', 'authors', 'country', 'city', 'pc', 'state', 'street', 'org'], dtype=str)
@@ -38,17 +34,6 @@ def categorize_countries(df):
 
 def _get_area(x):
     return grps_dict.get(x, None)
-
-    #if x in eng:
-    #    return '3'
-    #elif x in ww:
-    #    return '0'
-    #elif x in ee:
-    #    return '1'
-    #elif x in rest:
-    #    return '2'
-    #else:
-    #    return None
 
 def _areas(x):
     if '%' in x:
@@ -70,14 +55,10 @@ class ISIData(object):
     """
     Class for obtaining network evolution data for citation networks, where the groups are determined by countries in periods between years
     """
-    def __init__(self, f1, f2, years=(0, np.inf), net0=None):
+    def __init__(self, f1, f2, years=(0, np.inf), net0=None, tots0={}):
         self.f1 = f1
         self.f2 = f2
 
-        self.tots = {'laa': 0,
-                'lbb': 0,
-                'lab': 0,
-                'lba': 0}
         self.x = {}
         self.n = {}
         self.i = 0
@@ -86,9 +67,14 @@ class ISIData(object):
         if not net0:
             self.net = nx.empty_graph()
             self.deg_dist = {'a': {}, 'b': {}}
+            self.tots = {'laa': 0,
+                    'lbb': 0,
+                    'lab': 0,
+                    'lba': 0}
         else:
             self.net = net0
             self.deg_dist_n0()
+            self.tots = tots0
         self.years = years
 
     def get_metadata(self, min_yr=0, top_yr=np.inf):
@@ -199,7 +185,6 @@ class ISIData(object):
         self.deg_dist = {'a': a_deg, 'b': b_deg}
 
 
-
     def update_net_stats(self):
 
         pa = sum([k*x for k, x in self.deg_dist['a'].items()])
@@ -230,7 +215,7 @@ class ISIData(object):
 
     def update_stats(self, sgroup, tgroup, tgt):
         xg = sgroup + tgroup
-        tgt_deg = self.net.degree(tgt) - 1
+        tgt_deg = self.net.degree(tgt)
         nk = self.deg_dist[tgroup].get(tgt_deg, 1)
         self.current_x.append((xg, tgt_deg, nk))
 
@@ -283,16 +268,21 @@ if __name__ == '__main__':
         yrs = sys.argv[3:5]
         yr_0 = eval(yrs[0])
         yr_range = eval(yrs[1])
+        net0 = nx.empty_graph()
+        tots0 = {'laa': 0,
+                'lbb': 0,
+                'lab': 0,
+                'lba': 0}
         for yr in range(yr_0, 2011, yr_range):
             yrs = (yr, yr + yr_range)
-            ID = ISIData(eval(f1), eval(f2), yrs)
+            ID = ISIData(eval(f1), eval(f2), yrs, net0=net0, tots0=tots0)
             x, n, na = ID.get_data()
 
             f1c, f2c = '-'.join(eval(f1)), '-'.join(eval(f2))
             fcountries = 'A%{}_B%{}'.format(f1c, f2c)
             fyrs = str(yrs[0]) + str(yrs[1])
             #cp_name = 'isi/country_estimated_params_{}.txt'.format(fcountries)
-            es_name = 'isi/country_evol_{}.txt'.format(fcountries)
+            es_name = 'isi/country_evol_incn0_{}.txt'.format(fcountries)
 
             cp_line = ID.print_tots()
             GF = gdf.GrowthFit(x, n, na)
@@ -311,5 +301,8 @@ if __name__ == '__main__':
             line = cp_line + '|{}|{}|{}|{}\n'.format(sol0[0], sol0[1], 0, na)
             with open(es_name, 'a') as w:
                 w.write(line)
+
+            net0 = ID.net.copy()
+            tots0 = ID.tots.copy()
 
 

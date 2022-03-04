@@ -43,8 +43,6 @@ def get_group_degs(net):
     return grp_ks
 
 
-
-
 def get_airport_metadata():
     df = pd.read_csv('../data/airport/wikipedia_airports.csv')
     hpr = df[df.FAA.notnull()]
@@ -137,15 +135,6 @@ def update_x(nroutes, net, x, n, i):
         x[i] = xi
         n[i] = ni
         i += 1
-
-
-
-
-
-
-
-
-
 
 
 
