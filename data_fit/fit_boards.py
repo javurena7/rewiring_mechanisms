@@ -5,6 +5,7 @@ import growth_degree_fit as gdf
 import matplotlib.pyplot as plt; plt.ion()
 from collections import Counter
 import get_fixed_points as gfp
+import plot_evol as pe
 path = '../../data/board/'
 
 """
@@ -278,7 +279,7 @@ def plot_snapshots(dt=12):
     fig.tight_layout()
     fig.savefig('plots/snapshot_dt{}_boards_directors.pdf'.format(dt))
 
-
+# Main func
 def plot_snapshots_evolution(dt=12, n_samp=5):
     fig, axs= plt.subplots(1, 5, figsize=(5*3, 3), sharey=True)
     sas, sbs, cs, nas = [], [], [], []
@@ -288,55 +289,40 @@ def plot_snapshots_evolution(dt=12, n_samp=5):
     for i, (start, end) in enumerate(dates):
         x, n, obs, net_base, obs_0 = get_data_in_range(start, end, dt=dt, return_net=True)
         na = obs['na']
+        r_steps = len(x)
         RF = rdf.RewireFit(x, n, .3)
         sa, sb, c = RF.solve()
-        sa0, sb0 = RF.solve_c0()
-        print(sa, sb, c)
         sas.append(sa); sbs.append(sb); cs.append(c); nas.append(na)
-        sas0.append(sa0); sbs0.append(sb0)
-        P = (obs_0['paa'], obs_0['pbb'])
-        t = np.linspace(0, 50, 1000)
-        ysol = gfp.rewire_path(c=c, sa=sa, sb=sb, na=na, P=P, t=t)
-        ysol = p_to_t(ysol)
-
-        dists = [np.sqrt((obs['taa'] - x[0])**2 + (obs['tbb']-x[1])**2) for x in ysol]
-        xdist = np.argmin(dists)
-
-        ysol0 = gfp.rewire_path(c=0, sa=sa0, sb=sb0, na=na, P=P, t=t)
-        ysol0 = p_to_t(ysol0)
-
-        psim = gfp.rewire_simul_n(c, na, sa, sb, P, len(x), obs_0['N'], obs_0['L'], n_samp=n_samp)
-        tsim = p_to_t(psim)
-        tsim = np.mean(tsim, axis=0)
-
-        distsim = [np.sqrt((tsim[0] - x[0])**2 + (tsim[1]-x[1])**2) for x in ysol]
-        xdistsim = np.argmin(distsim)
-
-        axs[i+1].plot(t, ysol[:, 0], color='g', label='Predicted ' + r'$T_{aa}$')
-        axs[i+1].plot(t, ysol[:, 1], color='b', label='Predicted ' + r'$T_{bb}$')
-
-        axs[i+1].plot(t, ysol0[:, 0], '--', color='g')
-        axs[i+1].plot(t, ysol0[:, 1], '--', color='b')
-
-        axs[i+1].plot(t[xdistsim], tsim[0], 'x', label='Simulated '+ r'$T_{aa}$', color='g')
-        axs[i+1].plot(t[xdistsim], tsim[1], 'x', label='Simulated '+ r'$T_{bb}$', color='b')
-        axs[i+1].plot(t[xdist], obs['taa'], 'o', label='Observed '+ r'$T_{aa}$', color='g')
-        axs[i+1].plot(t[xdist], obs['tbb'], 'o', label='Observed '+ r'$T_{bb}$', color='b')
-        fig.savefig('plots/snapshot_evolution_dt{}_boards_directors_4dates.pdf'.format(dt))
+        P0 = (obs_0['paa'], obs_0['pbb'])
+        N, L = obs_0['N'], obs_0['L']
+        t_size = pe.gfp.rewire_steps(c, na, sa, sb, P0, N, L, 3)
+        if t_size is not None:
+            t_size = np.mean(t_size)
+        else:
+            t_size = 2500
+        extra = r_steps*.1
+        rho = 2*L / (N*(N-1))
+        P_obs = (obs['paa'], obs['pbb'])
+        rmetal = np.linspace(r_steps, end-start)
+        rmetat = range(start+1, end+1)
+        rmeta = [(x, y) for x, y in zip(rmetal, rmetat)]
+        pe.plot_rewire_predict(sa, sb, c, na, rho, P0=P0, P_obs=P_obs, r_steps=r_steps,
+                ax=axs[i+1], title='{}-{}'.format(start, end), extra=extra, rewiring_metadata=rmeta)
 
     xvals = ['{}-\n{}'.format(start+1, end) for start, end in dates]
-    axs[1].legend()
-    axs[0].plot(xvals, sas, '-', color='g', alpha=.5)
-    axs[0].plot(xvals, sbs, '-', color='b', alpha=.5)
-    axs[0].plot(xvals, sas0, '--', color='g', alpha=.5)
-    axs[0].plot(xvals, sbs0, '--', color='b', alpha=.5)
-    axs[0].plot(xvals, cs, '-', color='r', alpha=.5)
+    #axs[1].legend()
+    axs[0].plot(xvals, sas, '-', color='orangered', alpha=.5)
+    axs[0].plot(xvals, sbs, '-', color='royalblue', alpha=.5)
+    #axs[0].plot(xvals, sas0, '--', color='g', alpha=.5)
+    #axs[0].plot(xvals, sbs0, '--', color='b', alpha=.5)
+    axs[0].plot(xvals, cs, '-', color='green', alpha=.5)
     axs[0].plot(xvals, nas, '-', color='k', alpha=.5)
 
-    axs[0].plot(xvals, sas, 'o', label=r'$s_a$', color='g')
-    axs[0].plot(xvals, sbs, 'o', label=r'$s_b$', color='b')
-    axs[0].plot(xvals, cs, 'o', label=r'$c$', color='r')
+    axs[0].plot(xvals, sas, 'o', label=r'$s_a$', color='orangered')
+    axs[0].plot(xvals, sbs, 'o', label=r'$s_b$', color='royalblue')
+    axs[0].plot(xvals, cs, 'o', label=r'$c$', color='green')
     axs[0].plot(xvals, nas, 'o', label=r'$n_a$', color='k')
+
 
 
     axs[0].set_xlabel('Year')
@@ -344,13 +330,13 @@ def plot_snapshots_evolution(dt=12, n_samp=5):
     axs[0].set_title('Boards of Directors in Norway\n Estimated Parameters')
     axs[0].legend()
 
-    for i in range(4):
-        axs[i+1].set_xlabel('Mean-field time')
-        axs[i+1].set_ylabel('Estimate')
-        axs[i+1].set_title('Evolution \n{}-{}'.format(dates[i][0]+1, dates[i][1]))
+    #for i in range(4):
+    #    axs[i+1].set_xlabel('Mean-field time')
+    #    axs[i+1].set_ylabel('Estimate')
+    #    axs[i+1].set_title('Evolution \n{}-{}'.format(dates[i][0]+1, dates[i][1]))
 
     fig.tight_layout()
-    fig.savefig('plots/snapshot_evolution_dt{}_boards_directors_4dates.pdf'.format(dt))
+    fig.savefig('boards/snapshot_prediction_{}.pdf'.format(dt))
 
 def plot_snapshots_evolution_c0(dt=12):
     fig, axs= plt.subplots(1, 6, figsize=(6*3, 3), sharey=True)

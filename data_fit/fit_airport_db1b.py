@@ -446,7 +446,6 @@ def full_predict(a, b, years, dt):
     obs = RE.get_net_cp_statistics()
     rew_steps = RE.i
     RF = rdf.RewireFit(RE.x, RE.n, obs0['na'])
-
     sol = RF.solve_randx0(5)
     return obs0, obs, rew_steps, sol
 

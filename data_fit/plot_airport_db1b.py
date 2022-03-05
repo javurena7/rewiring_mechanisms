@@ -177,8 +177,8 @@ def plot_tops_predict_ss(a='1', b='4', suptitle='', name=''):
 
 
 def fit_ranges_predict(a='1', b='2', years=(1993, 1995), dt=4):
-    ag = [int(i) for i in a.split()] #Comment for hubs
-    bg = [int(i) for i in b.split()] #Comment for hubs
+    ag = [int(i) for i in list(a)] #Comment for hubs
+    bg = [int(i) for i in list(b)] #Comment for hubs
     obs0, obs, rew_steps, sol = fad.full_predict(ag, bg, years, dt=dt)
     sa, sb, c = sol
     na = obs['na']
