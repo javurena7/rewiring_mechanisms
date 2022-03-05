@@ -71,7 +71,7 @@ def plot_rewire_evol(sa, sb, c, na, T_obs=None, ax=None, evol_samp=100, t=None, 
     if title:
         ax.set_title(title)
 
-def plot_rewire_predict(sa, sb, c, na, P0=(0,0), T_obs=(0,0), ax=None, t=None, color=None, title='', r_steps=5000, t_size=2500, rewiring_metadata=[(0, '')], extra=1000):
+def plot_rewire_predict(sa, sb, c, na, rho=0, P0=(0,0), P_obs=(0,0), ax=None, t=None, color=None, title='', r_steps=5000, t_size=2500, rewiring_metadata=[(0, '')], extra=1000):
     """
     r_steps: rewiring steps between the intial condition and the observed value
     t_size: average number of rewiring steps included in one theoretical timestep
@@ -81,22 +81,29 @@ def plot_rewire_predict(sa, sb, c, na, P0=(0,0), T_obs=(0,0), ax=None, t=None, c
     if not t:
         t_tot = (r_steps + extra) / t_size
         t = np.linspace(0, t_tot, 5000)
+    if rho:
+        paas = (1/2, 2/3, 5/6)
+        lims, alphas = get_cp_limits(na, rho, paas)
+        plot_cp_limits(paas, lims, alphas, ax, t*t_size)
+
     Pa0, Pb0 = P0
     ysol = gfp.rewire_path(c, na, sa, sb, P0, t)
 
-    ysol = p_to_t_sols(ysol)
+    #ysol = p_to_t_sols(ysol)
     ax.plot(t*t_size, ysol[:, 0], alpha=.9, color='orangered') #t*tsize = rewireing steps
     ax.plot(t*t_size, ysol[:, 1], alpha=.9, color='royalblue')
     #ax.axhline(T_obs[0], linestyle='--', label='Obs '+r'$T_{aa}$', color='orangered')
     #ax.axhline(T_obs[1], linestyle='--', label='Obs '+r'$T_{bb}$', color='royalblue')
 
     t_obs = r_steps # / t_size
-    ax.plot(t_obs, T_obs[0], 'x', color='orangered', markersize=12, label='Obs ' + r'$T_{aa}$')
-    ax.plot(t_obs, T_obs[1], 'x', color='royalblue', markersize=12, label='Obs' + r'$T_{bb}$')
+    ax.plot(t_obs, P_obs[0], 'x', color='orangered', markersize=12, label='Obs ' + r'$P_{aa}$')
+    ax.plot(t_obs, P_obs[1], 'x', color='royalblue', markersize=12, label='Obs' + r'$P_{bb}$')
 
     for (loc, txt) in rewiring_metadata:
         ax.axvline(loc, linestyle='--', alpha=.3, color='grey')
         ax.text(loc+5, .07, str(txt), color='grey', alpha=.8)
+
+
 
     ax.legend(loc='upper right')
     ax.set_ylabel(r'$T$' + '-matrix')
@@ -104,6 +111,34 @@ def plot_rewire_predict(sa, sb, c, na, P0=(0,0), T_obs=(0,0), ax=None, t=None, c
     ax.set_ylim(0, 1)
     if title:
         ax.set_title(title)
+
+
+def get_cp_limits(na, rho, paas):
+    #paas = (1/2, 2/3, 5/6)
+    lims = []
+    alphas = []
+    for paa in paas:
+        pbb = 1-paa
+        corr, alpha = gfp.cp_correlation_cont_alpha(paa, pbb, na, rho)
+        lims.append(corr); alphas.append(alpha)
+    return lims, alphas
+
+
+def plot_cp_limits(paas, lims, alphas, ax, xvals):
+    colors = ['darkgrey', 'gray', 'dimgrey']
+    for paa, val, al, col in zip(paas, lims, alphas, colors):
+        #ax.axhline(paa, alpha=.8, color=col)
+        ax.fill_between(xvals, paa, 1, alpha=.2, color=col)
+        val = np.round(val, 2)
+        al = np.round(al, 2)
+        ax.text(5, paa+.03, f'CP={val}; a={al}', color=col)
+        ax.fill_between(xvals, 0, 1-paa, alpha=.2, color=col)
+        if paa > .5:
+            #ax.axhline(1-paa, alpha=.8, color=col)
+            ax.text(5, 1-paa-.03, f'CP={val}; a={al}', color=col)
+        else:
+            ax.axhline(paa, color=col)
+
 
 def plot_rewire_policy(params, changes=[['sa', (.4, .6)]], P0=(0, 0), ax=None, ts=None, t_size=2500):
     """

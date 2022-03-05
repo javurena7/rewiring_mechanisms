@@ -53,10 +53,9 @@ def plot_test_cont():
             for paa, pbb in product(ps, ps):
                 if paa + pbb <= 100:
                     corr = cp_correlation_cont(paa/100, pbb/100, na, rho, 0)
-                    corr = min([corr, 1])
+                    corr = corr if corr <= 1 else np.nan
                     vals[paa, pbb] = corr
                     #vals[pbb, paa] = np.nan
-            #vals = DataFrame(vals,columns=['paa', 'pbb', 'cr'])
             sns.heatmap(vals, ax=axs[j, i], center=0, vmin=-.2, vmax=1)
             axs[j,i].set_xlabel(r'$P_{bb}$')
             axs[j,i].set_ylabel(r'$P_{aa}$')
@@ -77,8 +76,9 @@ def plot_test_disc():
     import matplotlib.pyplot as plt; plt.ion()
     import seaborn as sns
     nas = (.1, .2, .3, .4, .5)
+    rhos = (.001, .005, .01, .05, .1)
     ps = range(101)
-    fig, axs = plt.subplots(1, 5, figsize=(5*3, 3), sharex=True, sharey=True)
+    fig, axs = plt.subplots(5, 5, figsize=(5*3, 5*3), sharex=True, sharey=True)
     na_corr = {}
     for i, na in enumerate(nas):
         vals = np.zeros((101, 101))
@@ -114,18 +114,24 @@ def cp_correlation_alpha(laa, lab, lbb, n, na):
     idx = np.argmax(cps)
     return cps[idx], alphas[idx]
 
+def cp_correlation_cont_alpha(paa, pbb, na, rho):
+    alphas = np.linspace(0, 1, 1001)
+    cps = []
+    for a in alphas:
+        corr = cp_correlation_cont(paa, pbb, na, rho, a)
+        corr = corr if corr < 1 else 0
+        cps.append(corr)
+    idx = np.argmax(cps)
+    return cps[idx], alphas[idx]
 
-def p_mat_correlation(L, N, Na, a):
+
+def p_mat_correlation(na, rho):
     paa = np.linspace(0, 1, 101)
     pbb = np.linspace(0, 1, 101)
     vals = []
-    Nb = N - Na
     for paa, pbb in product(paa, pbb):
         if paa + pbb <= 1:
-            laa = min([paa*L, Na*(Na-1)/2])
-            lbb = min([pbb*L, Nb*(Nb-1)/2])
-            lab = L - laa - lbb
-            corr = cp_correlation(laa, lab, lbb, N, Na, a)
+            corr = cp_correlation_cont(paa, pbb, na, rho, 0)
             it = [paa, pbb, corr]
             vals.append(it)
     vals = DataFrame(vals, columns=['paa', 'pbb', 'cr'])
@@ -246,7 +252,10 @@ def rewire_steps(c, na, sa, sb, P0, N, L, n_steps=10, t_size=5000):
     path = rewire_path(c, na, sa, sb, P0, t)
     rsteps = list(range(0, t_size, int(t_size/n_steps))) + [-1]
     P_steps = [path[i, :] for i in rsteps]
-    n_ests = [1] + rewire_until_p(c, na, sa, sb, P0, N, L, P_steps)
+    try:
+        n_ests = [1] + rewire_until_p(c, na, sa, sb, P0, N, L, P_steps)
+    except:
+        n_ests = [None]
     if np.all(n_ests):
         n_ests = [i-j for i, j in zip(n_ests[1:], n_ests[:-1])]
         return n_ests
