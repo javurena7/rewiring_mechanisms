@@ -38,7 +38,17 @@ def cp_correlation_cont(paa, pbb, na, rho, a):
     corr = (exy - ex*ey) / np.sqrt(sx*sy)
     return corr
 
-def plot_test_cont():
+def cp_correlation_cont_correctdens(paa, pbb, na, rho):
+    # rho is the newtork density rho=2L/N(N-1)
+# HERE WE CORRECT over max possible correlation
+    corr = cp_correlation_cont(paa, pbb, na, rho, 0)
+    corrs = [cp_correlation_cont(paa, pbb, nai, rho, 0) for nai in np.linspace(0, 1, 100)]
+    corrs = [cr if np.abs(cr) <= 1 else 0 for cr in corrs]
+    adj_corr = corr / max(corrs)
+
+    return adj_corr
+
+def plot_test_cont(adjust=False, a=0):
     import matplotlib.pyplot as plt; plt.ion()
     import seaborn as sns
     nas = (.1, .2, .3, .4, .5)
@@ -52,7 +62,10 @@ def plot_test_cont():
             vals[:] = np.nan
             for paa, pbb in product(ps, ps):
                 if paa + pbb <= 100:
-                    corr = cp_correlation_cont(paa/100, pbb/100, na, rho, 0)
+                    if not adjust:
+                        corr = cp_correlation_cont(paa/100, pbb/100, na, rho, a)
+                    else:
+                        corr = cp_correlation_cont_correctdens(paa/100, pbb/100, na, rho)
                     corr = corr if corr <= 1 else np.nan
                     vals[paa, pbb] = corr
                     #vals[pbb, paa] = np.nan
@@ -66,13 +79,18 @@ def plot_test_cont():
     yticks = axs[j,i].get_yticks()
     axs[j,i].set_xticklabels([str(np.round(p/100, 2)) for p in xticks])
     axs[j,i].set_yticklabels([str(np.round(p/100, 2)) for p in yticks])
-    fig.suptitle('Continuous correlation to ideal CP matrix')
-    fig.tight_layout()
-    fig.savefig('plots/cont_corr_cp_mat.pdf')
+    if not adjust:
+        fig.suptitle('Continuous correlation to ideal CP matrix')
+        fig.tight_layout()
+        fig.savefig('cp_measure_plots/cont_corr_cp_mat_a{}.pdf'.format(a))
+    else:
+        fig.suptitle('Continuous adjusted correlation to ideal CP matrix')
+        fig.tight_layout()
+        fig.savefig('cp_measure_plots/cont_corr_cp_mat_adjust.pdf')
 
     return na_corr, (fig, axs)
 
-def plot_test_disc():
+def plot_test_discrete():
     import matplotlib.pyplot as plt; plt.ion()
     import seaborn as sns
     nas = (.1, .2, .3, .4, .5)
@@ -101,7 +119,92 @@ def plot_test_disc():
     axs[i].set_yticklabels([str(np.round(p/100, 2)) for p in yticks])
     fig.suptitle('Continuous correlation to ideal CP matrix')
     fig.tight_layout()
-    fig.savefig('plots/cont_corr_cp_mat.pdf')
+    fig.savefig('cp_measure_plots/disc_corr_cp_mat.pdf')
+
+def plot_test_cont_rho_na(adjust=False):
+    import matplotlib.pyplot as plt; plt.ion()
+    import seaborn as sns
+    paas = (1, .75, .5, .25, .1)
+    pbbs = (0, .25, .5, .75, .9)
+    ps = range(101)
+    fig, axs = plt.subplots(5, 5, figsize=(5*3, 5*3))
+    na_corr = {}
+    for i, paa in enumerate(paas):
+        for j, pbb in enumerate(pbbs):
+            vals = np.zeros((101, 101))
+            vals[:] = np.nan
+            if paa + pbb <= 1:
+                for na, rho in product(ps, ps):
+                    if not adjust:
+                        corr = cp_correlation_cont(paa, pbb, na/100, rho/100, 0)
+                    else:
+                        corr = cp_correlation_cont_correctdens(paa, pbb, na/100, rho/100)
+                    corr = corr if np.abs(corr) <= 1 else np.nan
+                    vals[na, rho] = corr
+                    #vals[pbb, paa] = np.nan
+                sns.heatmap(vals, ax=axs[i, j], center=0, vmin=-1, vmax=1)
+                axs[i,j].set_xlabel(r'$\rho$')
+                axs[i,j].set_ylabel(r'$n_{a}$')
+                axs[i,j].set_title(r'$P_{aa}=$' + f'{paa}    ' + r'$P_{bb}=$' + f'{pbb}')
+                xticks = axs[i,j].get_xticks()
+                axs[i,j].set_xticklabels([str(np.round(p/100, 2)) for p in xticks])
+                axs[i,j].invert_yaxis()
+                yticks = axs[i,j].get_yticks()
+                axs[i,j].set_yticklabels([str(np.round(p/100, 2)) for p in yticks])
+            else:
+                axs[i,j].axis('off')
+    fig.tight_layout()
+    if not adjust:
+        fig.suptitle('Continuous correlation to ideal CP matrix\n varying ' +r'$n_a$' ' and '+r'$\rho$')
+        fig.tight_layout()
+        fig.savefig('cp_measure_plots/cont_corr_cp_na_rho.pdf')
+    else:
+        fig.suptitle('Continuous adjusted correlation to ideal CP matrix\n varying ' +r'$n_a$' ' and '+r'$\rho$')
+        fig.tight_layout()
+        fig.savefig('cp_measure_plots/cont_corr_cp_na_rho_adjust.pdf')
+
+def plot_test_cont_local_dens(adjust=False, a=0):
+    import matplotlib.pyplot as plt; plt.ion()
+    import seaborn as sns
+    rho_bbs = (0, .05, .1, .25, .5)
+    rho_abs = (0, .05, .1, .25, .5)
+    ps = range(101)
+    fig, axs = plt.subplots(5, 5, figsize=(5*3, 5*3))
+    na_corr = {}
+    for i, rho_bb in enumerate(rho_bbs):
+        for j, rho_ab in enumerate(rho_abs):
+            vals = np.zeros((101, 101))
+            vals[:] = np.nan
+            for Na, rho_aa in product(ps, ps):
+                na = Na / 100
+                rho = (rho_aa/100)*na**2 + 2*rho_ab*na*(1-na) + rho_bb*(1-na)**2
+                paa = (rho_aa/100)*na**2 / rho if rho > 0 else 0
+                pbb = rho_bb*(1-na)**2 / rho if rho > 0 else 0
+                if not adjust:
+                    corr = cp_correlation_cont(paa, pbb, na, rho, a)
+                else:
+                    corr = cp_correlation_cont_correctdens(paa, pbb, na, rho)
+                corr = corr if np.abs(corr) <= 1 else np.nan
+                vals[Na, rho_aa] = corr
+                #vals[pbb, paa] = np.nan
+            sns.heatmap(vals, ax=axs[i, j], center=0, vmin=-1, vmax=1)
+            axs[i,j].set_xlabel(r'$\rho_{aa}$')
+            axs[i,j].set_ylabel(r'$n_{a}$')
+            axs[i,j].set_title(r'$\rho_{ab}=$' + f'{rho_ab}    ' + r'$\rho_{bb}=$' + f'{rho_bb}')
+            xticks = axs[i,j].get_xticks()
+            axs[i,j].set_xticklabels([str(np.round(p/100, 2)) for p in xticks])
+            axs[i,j].invert_yaxis()
+            yticks = axs[i,j].get_yticks()
+            axs[i,j].set_yticklabels([str(np.round(p/100, 2)) for p in yticks])
+    fig.tight_layout()
+    if not adjust:
+        fig.suptitle('Continuous correlation to ideal CP matrix\n varying local densitites')
+        fig.tight_layout()
+        fig.savefig('cp_measure_plots/cont_local_dens_a{}.pdf'.format(a))
+    else:
+        fig.suptitle('Continuous adjusted correlation to ideal CP matrix\n varying local densitites')
+        fig.tight_layout()
+        fig.savefig('cp_measure_plots/cont_local_dens_adjust.pdf')
 
 
 def cp_correlation_alpha(laa, lab, lbb, n, na):
