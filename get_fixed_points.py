@@ -9,8 +9,6 @@ import asikainen_model as am
 from pandas import DataFrame
 from itertools import product
 
-# TODO: test correlations as a general measure
-# TODO: check if the measure is alright
 # TODO: generalize plots for four datasets
 # TODO: add CP measure to plot_evol cases
 
@@ -256,8 +254,6 @@ def get_cp_corr(df):
     return df
 
 
-
-
 def test_cp_correlation(N, Na, paa, pab, pbb, a):
     net = nx.stochastic_block_model([Na, N-Na], [[paa, pab], [pab, pbb]])
     arr = nx.adj_matrix(net).toarray()
@@ -275,7 +271,7 @@ def test_cp_correlation(N, Na, paa, pab, pbb, a):
     print(corr, corr_test)
 
 
-
+#MAIN FUNC
 def rewire_fixed_points(c, na, sa, sb):
     paa, pbb = sm.symbols('paa, pbb', negative=False)
 
@@ -295,10 +291,11 @@ def rewire_fixed_points(c, na, sa, sb):
 
     equilibria = sm.solve((PaaEqual, PbbEqual), paa, pbb)
     equilibria = check_solutions(equilibria)
-    equilibria = p_to_t(equilibria)
+    #equilibria = p_to_t(equilibria)
 
     return equilibria
 
+#MAIN FUNC
 def rewire_path(c, na, sa, sb, P, t):
 
     paa, pbb = P #p_from_G(G0, Na)
@@ -320,6 +317,72 @@ def rewire_path(c, na, sa, sb, P, t):
         return np.array([dPaa, dPbb])
     ysol = odeint(rewire_model, y0, t)
     return ysol
+
+
+def rewire_fixed_points_density(c, na, sa, sb, rho=.1):
+    paa, pbb = sm.symbols('paa, pbb', negative=False)
+
+    maa = (c*.5*(paa + 1 - pbb) + (1-c)*na)*sa
+    mab = (c*.5*(pbb + 1 - paa) + (1-c)*(1-na))*(1-sa)
+    mba = (c*.5*(paa + 1 - pbb) + (1-c)*na)*(1-sb)
+    mbb = (c*.5*(pbb + 1 - paa) + (1-c)*(1-na))*sb
+
+    taa = 2*paa / (paa + 1 - pbb)
+    tbb =  2*pbb / (pbb + 1 - paa)
+
+    Paa = na*maa - na*taa*(maa + mab)
+    Pbb = (1-na)*mbb - (1-na)*tbb*(mba + mbb)
+
+    PaaEqual = sm.Eq(Paa, 0)
+    PbbEqual = sm.Eq(Pbb, 0)
+
+    equilibria = sm.solve((PaaEqual, PbbEqual), paa, pbb)
+    equilibria = check_solutions(equilibria)
+    corrs_a = [cp_correlation_cont(paa, pbb, na, rho, .01) for (paa, pbb) in equilibria]
+    corrs_b = [cp_correlation_cont(pbb, paa, 1-na, rho, .01) for (paa, pbb) in equilibria]
+    densities = p_to_rho(equilibria, rho, na)
+    #equilibria = p_to_t(equilibria)
+
+    return densities, corrs_a, corrs_b
+
+def growth_fixed_points(c, na, sa, sb):
+    paa, pbb = sm.symbols('paa, pbb', negative=False)
+    maa = (c*.5*(paa + 1 - pbb) + (1-c)*na)*sa
+    mab = (c*.5*(pbb + 1 - paa) + (1-c)*(1-na))*(1-sa)
+    mba = (c*.5*(paa + 1 - pbb) + (1-c)*na)*(1-sb)
+    mbb = (c*.5*(pbb + 1 - paa) + (1-c)*(1-na))*sb
+
+    DLaa = na*maa
+    DLbb = (1-na)*mbb
+    DL = na*(maa+mab) + (1-na)*(mba+mbb)
+
+    PaaEqual = sm.Eq(DLaa/DL, paa)
+    PbbEqual = sm.Eq(DLbb/DL, pbb)
+    equilibria = sm.solve((PaaEqual, PbbEqual), paa, pbb) #This might yield a dict
+    if isinstance(equilibria, dict):
+        equilibria = [(equilibria.get(paa, np.nan), equilibria.get(pbb, np.nan))]
+    equilibria = check_solutions(equilibria)
+    return equilibria
+
+
+def growth_fixed_points_density(c, na, sa, sb, rho):
+    equilibria = growth_fixed_points(c, na, sa, sb)
+    corrs_a = [cp_correlation_cont(paa, pbb, na, rho, .01) for (paa, pbb) in equilibria]
+    corrs_b = [cp_correlation_cont(pbb, paa, 1-na, rho, .01) for (paa, pbb) in equilibria]
+    densities = p_to_rho(equilibria, rho, na)
+    return densities, corrs_a, corrs_b
+
+
+def p_to_rho(sols, rho, na):
+    rhos = []
+    for sol in sols:
+        paa, pbb = sol
+        rho_aa = rho * paa / na**2
+        rho_bb = rho * pbb / (1-na)**2
+        rho_ab = rho * (1-paa-pbb) / (na*(1-na))
+        rhos.append((rho_aa, rho_ab, rho_bb))
+    return rhos
+
 
 def rewire_simul_simple(c, na, sa, sb, P, t, N, L):
     paa, pbb = P

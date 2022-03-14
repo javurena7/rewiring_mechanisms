@@ -3,6 +3,7 @@ from matplotlib import gridspec
 import seaborn as sns
 import numpy as np
 import pandas as pd
+import sys; sys.path.append('..')
 import get_fixed_points as gfp
 import json
 
@@ -106,7 +107,7 @@ def plot_rewire_predict(sa, sb, c, na, rho=0, P0=(0,0), P_obs=(0,0), ax=None, t=
 
 
     ax.legend(loc='upper right')
-    ax.set_ylabel(r'$T$' + '-matrix')
+    ax.set_ylabel(r'$P$' + '-matrix')
     ax.set_xlabel(r'$t$' + ' (rewiring events)')
     ax.set_ylim(0, 1)
     if title:
@@ -135,12 +136,12 @@ def plot_cp_limits(paas, lims, alphas, ax, xvals):
         ax.fill_between(xvals, 0, 1-paa, alpha=.2, color=col)
         if paa > .5:
             #ax.axhline(1-paa, alpha=.8, color=col)
-            ax.text(5, 1-paa-.03, f'CP={val}; a={al}', color=col)
+            ax.text(5, 1-paa-.03, f'CP={val}', color=col)
         else:
             ax.axhline(paa, color=col)
 
 
-def plot_rewire_policy(params, changes=[['sa', (.4, .6)]], P0=(0, 0), ax=None, ts=None, t_size=2500):
+def plot_rewire_policy(params, changes=[['sa', (.4, .6)]], P0=(0, 0), ax=None, ts=None, t_size=2500, rho=None, title=''):
     """
     Plot the effect of a change in parameters, where the change of params occurs only once (two values for a single parameter)
     params: dict with stable values 'c', 'sa', 'sb' or 'na'
@@ -154,10 +155,16 @@ def plot_rewire_policy(params, changes=[['sa', (.4, .6)]], P0=(0, 0), ax=None, t
     params['t'] = ts[0]
     for change in changes:
         params[change[0]] = change[1][0]
+    if rho:
+        paas = (1/2, 2/3, 5/6)
+        na = params['na']
+        lims, alphas = get_cp_limits(na, rho, paas)
+        t = np.concatenate((ts[0], ts[1] + ts[0][-1]))
+        plot_cp_limits(paas, lims, alphas, ax, t*t_size)
 
     ysol = gfp.rewire_path(**params)
     P1 = ysol[-1, :]
-    ysol = p_to_t_sols(ysol)
+    #ysol = p_to_t_sols(ysol)
     ax.plot(ts[0]*t_size, ysol[:, 0], alpha=.9, color='orangered') #t*tsize = rewireing steps
     ax.plot(ts[0]*t_size, ysol[:, 1], alpha=.9, color='royalblue')
 
@@ -167,29 +174,22 @@ def plot_rewire_policy(params, changes=[['sa', (.4, .6)]], P0=(0, 0), ax=None, t
         params[change[0]] = change[1][1]
 
     ysol = gfp.rewire_path(**params)
-    ysol = p_to_t_sols(ysol)
+    #ysol = p_to_t_sols(ysol)
     t2 = (ts[0][-1] + ts[1]) * t_size
-    ax.plot(t2, ysol[:, 0], alpha=.9, color='orangered', label=r'$T_{aa}$')
-    ax.plot(t2, ysol[:, 1], alpha=.9, color='royalblue', label=r'$T_{bb}$')
+    ax.plot(t2, ysol[:, 0], alpha=.9, color='orangered', label=r'$P_{aa}$')
+    ax.plot(t2, ysol[:, 1], alpha=.9, color='royalblue', label=r'$P_{bb}$')
 
     txt_dict = {'sa': r'$s_a$', 'sb': r'$s_b$', 'c': r'$c$', 'na': r'$n_a$'}
-
     txt = '\n'.join([txt_dict[v] + f': {k[0]}' + r'$\rightarrow$' + f'{k[1]}' for v, k in changes])
     ax.axvline(t2[0], linestyle='--', alpha=.3, color='grey')
     ax.text(t2[0]+5, .07, txt, color='grey', alpha=.8)
 
     ax.legend(loc='upper right')
-    ax.set_ylabel(r'$T$' + '-matrix')
+    ax.set_ylabel(r'$P$' + '-matrix')
     ax.set_xlabel(r'$t$' + ' (rewiring events)')
     ax.set_ylim(0, 1)
-
-
-
-
-
-
-
-
+    if title:
+        ax.set_title(title)
 
 
 
