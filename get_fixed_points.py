@@ -3,15 +3,11 @@ from scipy.integrate import odeint
 import numpy as np
 import sys
 sys.path.append('..')
-sys.path.append('../..')
+sys.path.append('../data_fit/')
 import networkx as nx
 import asikainen_model as am
 from pandas import DataFrame
 from itertools import product
-
-# TODO: generalize plots for four datasets
-# TODO: add CP measure to plot_evol cases
-
 
 def cp_correlation(laa, lab, lbb, n, na, a):
     nb = n - na

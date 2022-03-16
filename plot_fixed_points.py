@@ -10,7 +10,7 @@ from scipy import interpolate
 
 lab_dict = {'sa': r'$s_a$', 'sb': r'$s_b$', 'c': r'$c$', 'na': r'$n_a$', 'rho':r'$\rho$'}
 
-def get_phase_space_grow(x='sa', y='sb', params={'c':.95, 'na':.5, 'rho':.1}, xlims=(.5, 1), ylims=(.5, 1), n_size=250):
+def get_phase_space_grow(x='sa', y='sb', params={'c':.95, 'na':.5, 'rho':.1}, xlims=(.5, 1), ylims=(.5, 1), n_size=250, extraname=''):
     xvals = np.linspace(*xlims, n_size + 2)[1:-1]
     yvals = np.linspace(*ylims, n_size + 2)[1:-1]
     acore, bcore = np.zeros((n_size, n_size)), np.zeros((n_size, n_size))
@@ -24,11 +24,11 @@ def get_phase_space_grow(x='sa', y='sb', params={'c':.95, 'na':.5, 'rho':.1}, xl
         dens, ca, cb = gfp.growth_fixed_points_density(**params)
         acore, bcore = classify_densities(dens, ca, cb, acore, bcore, i, j)
     results = {'acore': acore, 'bcore': bcore, 'params': params}
-    p.dump(results, open('data_plot_phasespaceg_{}{}-rho{}.p'.format(x,y, params['rho']), 'wb'))
+    p.dump(results, open('ps_plots/data_plot_phasespaceg_{}{}-rho{}_{}.p'.format(x,y, params['rho'], extraname), 'wb'))
     return acore, bcore
 
 
-def plot_phase_space_grow(x='sa', y='sb', params={'c':.95, 'na':.5, 'rho':.1}, xlims=(.5, 1), ylims=(.5, 1), n_size=250, fig=None, ax=None, data=(), title='', n_ticks=11, border_width=10):
+def plot_phase_space_grow(x='sa', y='sb', params={'c':.95, 'na':.5, 'rho':.1}, xlims=(.5, 1), ylims=(.5, 1), n_size=250, fig=None, ax=None, data=(), title='', n_ticks=11, border_width=10, extraname=''):
     """
     data: format (acore, bcore, border) if the experiments have already run
     """
@@ -40,7 +40,7 @@ def plot_phase_space_grow(x='sa', y='sb', params={'c':.95, 'na':.5, 'rho':.1}, x
         acore, bcore = data
     #sns.heatmap(border, cbar=False, ax=ax, center=0, vmax=1, cmap='Greys')
     sns.heatmap(acore, cbar=False, center=0, ax=ax, vmin=0, vmax=.8,  cbar_kws={'label': r'$r$'}, square=True, cmap='Spectral')
-    sns.heatmap(bcore, cbar=False, center=0, ax=ax, vmin=0, vmax=.8, cmap='Spectral')
+    sns.heatmap(bcore, cbar=True, center=0, ax=ax, vmin=0, vmax=.8, cmap='Spectral')
     if not np.isnan(acore).all():
         aborder = get_border(n_size, acore)
         aint = interpolate_border(aborder, n_size/10)
@@ -56,8 +56,8 @@ def plot_phase_space_grow(x='sa', y='sb', params={'c':.95, 'na':.5, 'rho':.1}, x
         ax.text(b_loc[1], b_loc[0], 'B+', color='dimgrey', size=12)
 
     #REMOVE: hardcoded text for
-    ax.text(.4*n_size, .4*n_size, '0', size=12, color='dimgrey')
-    ax.text(.85*n_size, .85*n_size, '0', size=12, color='dimgrey')
+    #ax.text(.4*n_size, .4*n_size, '0', size=12, color='dimgrey')
+    #ax.text(.85*n_size, .85*n_size, '0', size=12, color='dimgrey')
 
     xticks = np.linspace(0, n_size, n_ticks)
     xticklabels = [str(np.round(xt, 2)) for xt in np.linspace(*xlims, n_ticks)]
@@ -77,7 +77,7 @@ def plot_phase_space_grow(x='sa', y='sb', params={'c':.95, 'na':.5, 'rho':.1}, x
     if fig:
         fig.tight_layout()
         #results = {'acore': acore, 'bcore': bcore, 'params': params}
-        name = 'plots/phsp_grow_{}_{}-rho{}.pdf'.format(x, y, params['rho'])
+        name = 'ps_plots/phsp_grow_{}_{}-rho{}_{}.pdf'.format(x, y, params['rho'], extraname)
         fig.savefig(name)
 
 
@@ -93,7 +93,7 @@ def interpolate_border(border, s=10, invert=False):
     out = interpolate.splev(unew, tck)
     return out[0], out[1]
 
-def get_phase_space_rewire(x='sa', y='sb', params={'c':.95, 'na':.5, 'rho':.1}, xlims=(.5, 1), ylims=(.5, 1), n_size=250):
+def get_phase_space_rewire(x='sa', y='sb', params={'c':.95, 'na':.5, 'rho':.1}, xlims=(.5, 1), ylims=(.5, 1), n_size=250, extraname=''):
     xvals = np.linspace(*xlims, n_size + 2)[1:-1]
     yvals = np.linspace(*ylims, n_size + 2)[1:-1]
     acore, bcore = np.zeros((n_size, n_size)), np.zeros((n_size, n_size))
@@ -111,13 +111,13 @@ def get_phase_space_rewire(x='sa', y='sb', params={'c':.95, 'na':.5, 'rho':.1}, 
     saved['acore'] = acore; saved['bcore'] = bcore
     st_border = get_st_border(st_border)
     saved['st_border'] = st_border
-    p.dump(saved, open('plots/data_plot_phasespacer_{}{}_rho{}.p'.format(x,y, params['rho']), 'wb'))
+    p.dump(saved, open('ps_plots/data_plot_phasespacer_{}{}_rho{}_{}.p'.format(x,y, params['rho'], extraname), 'wb'))
     #cp_border = get_border(n_size, acore, bcore)
     #return acore, bcore, cp_border, st_border
     return acore, bcore
 
 
-def plot_phase_space_rewire(x='sa', y='sb', params={'c':.95, 'na':.5, 'rho':.1}, xlims=(0, 1), ylims=(0, 1), n_size=200, fig=None, ax=None, n_ticks=11, data=(), border_width=10, title='', cbar_ax=None):
+def plot_phase_space_rewire(x='sa', y='sb', params={'c':.95, 'na':.5, 'rho':.1}, xlims=(0, 1), ylims=(0, 1), n_size=200, fig=None, ax=None, n_ticks=11, data=(), border_width=10, title='', cbar_ax=None, extraname=''):
     if ax is None:
         fig, ax = plt.subplots()
     if not data:
@@ -168,7 +168,7 @@ def plot_phase_space_rewire(x='sa', y='sb', params={'c':.95, 'na':.5, 'rho':.1},
     ax.invert_yaxis()
     if title:
         ax.set_title(title)
-    name = 'plots/phsp_rewire_{}_{}-rho{}.pdf'.format(x, y, params['rho'])
+    name = 'ps_plots/phsp_rewire_{}_{}-rho{}_{}.pdf'.format(x, y, params['rho'], extraname)
     if fig:
         fig.tight_layout()
         fig.savefig(name)
@@ -252,3 +252,33 @@ def classify_densities_rewire(dens, ca, cb, acore, bcore, i, j, st_border):
         acore, bcore = classify_densities([dens[0]], [ca[0]], [cb[0]], acore, bcore, i, j)
         acore, bcore = classify_densities([dens[2]], [ca[2]], [cb[2]], acore, bcore, i, j)
     return acore, bcore, st_border
+
+
+if __name__ == '__main__':
+    import argparse as args
+
+    parser = args.ArgumentParser()
+    parser.add_argument('--mtype', type=str, required=True, default='rewire')
+    parser.add_argument('--x', type=str, required=True, default='sa')
+    parser.add_argument('--y', type=str, required=True, default='sb')
+    parser.add_argument('--c', type=float, default=0.95)
+    parser.add_argument('--na', type=float, default=0.5)
+    parser.add_argument('--sa', type=float, default=0.75)
+    parser.add_argument('--sb', type=float, default=0.75)
+    parser.add_argument('--rho', type=float, default=0.15)
+    parser.add_argument('--n_size', type=int, default=25)
+
+    args = parser.parse_args()
+    params = {'sa': args.sa,
+            'sb': args.sb,
+            'c': args.c,
+            'na': args.na,
+            'rho': args.rho}
+    x = args.x; y = args.y
+    extraname=['{}{}'.format(k,v) for k, v in params.items() if k not in [x, y]]
+    if args.mtype == 'rewire':
+        plot_phase_space_rewire(x=x, y=y, params=params, n_size=args.n_size, xlims=(0, 1), ylims=(0, 1), extraname='_'.join(extraname))
+    elif args.mtype == 'grow':
+        plot_phase_space_grow(x=x, y=y, params=params, n_size=args.n_size, xlims=(0, 1), ylims=(0, 1), extraname='_'.join(extraname))
+
+
